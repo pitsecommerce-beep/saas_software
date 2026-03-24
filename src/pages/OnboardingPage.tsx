@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import type { FormEvent } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import type { FormEvent, DragEvent, ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   Zap,
   PartyPopper,
+  X,
 } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -40,7 +41,7 @@ const slideVariants = {
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { profile } = useAuthStore();
+  const { profile, fetchProfile, fetchTeam } = useAuthStore();
 
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1);
@@ -49,6 +50,11 @@ export default function OnboardingPage() {
   const [inviteCode] = useState(() => generateInviteCode());
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [logoError, setLogoError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const goNext = useCallback(() => {
     setDirection(1);
@@ -60,18 +66,93 @@ export default function OnboardingPage() {
     setStep((s) => Math.max(s - 1, 1));
   }, []);
 
+  const processLogoFile = (file: File) => {
+    setLogoError('');
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Solo se permiten imágenes (PNG, JPG).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError('El archivo no debe superar 2MB.');
+      return;
+    }
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  };
+
+  const handleLogoClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleLogoFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processLogoFile(file);
+  };
+
+  const handleLogoDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processLogoFile(file);
+  };
+
+  const handleLogoDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleLogoDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const removeLogo = () => {
+    setLogoFile(null);
+    setLogoPreview(null);
+    setLogoError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleCreateTeam = async () => {
     setLoading(true);
     try {
-      await supabase.from('teams').insert({
-        name: companyName,
-        business_type: businessType,
-        invite_code: inviteCode,
-        owner_id: profile?.id,
-        active_modules: ['conversations', 'customers', 'ai-agents'],
-      });
+      const { data: teamData, error: teamError } = await supabase
+        .from('teams')
+        .insert({
+          name: companyName,
+          business_type: businessType,
+          invite_code: inviteCode,
+          owner_id: profile?.id,
+          active_modules: ['conversations', 'customers', 'ai-agents'],
+        })
+        .select()
+        .single();
+
+      if (teamError) throw teamError;
+
+      // Upload logo if provided
+      if (logoFile && teamData) {
+        const ext = logoFile.name.split('.').pop();
+        const path = `${teamData.id}/logo.${ext}`;
+        await supabase.storage.from('logos').upload(path, logoFile, { upsert: true });
+      }
+
+      // Update profile with the new team_id
+      if (teamData && profile?.id) {
+        await supabase
+          .from('profiles')
+          .update({ team_id: teamData.id })
+          .eq('id', profile.id);
+      }
+
+      // Refresh auth store so ProtectedRoute sees the team_id
+      await fetchProfile();
+      await fetchTeam();
     } catch {
       console.warn('Supabase not configured, proceeding with mock data');
+      // In mock mode fetchProfile/fetchTeam will hydrate the store with mock team
+      await fetchProfile();
+      await fetchTeam();
     } finally {
       setLoading(false);
       goNext();
@@ -324,20 +405,63 @@ export default function OnboardingPage() {
                     <label className="block text-sm font-medium text-surface-700">
                       Logo (opcional)
                     </label>
-                    <div className="flex items-center justify-center rounded-2xl border-2 border-dashed border-surface-200 bg-white px-6 py-10 transition-colors hover:border-surface-300 hover:bg-surface-50 cursor-pointer">
-                      <div className="text-center">
-                        <Upload className="mx-auto h-8 w-8 text-surface-300" />
-                        <p className="mt-2 text-sm text-surface-500">
-                          Arrastra tu logo aquí o{' '}
-                          <span className="font-medium text-primary-500">
-                            selecciona un archivo
-                          </span>
-                        </p>
-                        <p className="mt-1 text-xs text-surface-400">
-                          PNG, JPG hasta 2MB
-                        </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={handleLogoFileChange}
+                    />
+                    {logoPreview ? (
+                      <div className="relative flex items-center gap-4 rounded-2xl border-2 border-surface-200 bg-white px-6 py-4">
+                        <img
+                          src={logoPreview}
+                          alt="Logo preview"
+                          className="h-16 w-16 rounded-xl object-contain border border-surface-100"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-surface-700 truncate">{logoFile?.name}</p>
+                          <p className="text-xs text-surface-400 mt-0.5">
+                            {logoFile ? (logoFile.size / 1024).toFixed(0) + ' KB' : ''}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={removeLogo}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-100 text-surface-400 hover:bg-surface-200 hover:text-surface-600 transition-colors"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
                       </div>
-                    </div>
+                    ) : (
+                      <div
+                        onClick={handleLogoClick}
+                        onDrop={handleLogoDrop}
+                        onDragOver={handleLogoDragOver}
+                        onDragLeave={handleLogoDragLeave}
+                        className={`flex items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 transition-colors cursor-pointer ${
+                          isDragOver
+                            ? 'border-primary-400 bg-primary-50'
+                            : 'border-surface-200 bg-white hover:border-surface-300 hover:bg-surface-50'
+                        }`}
+                      >
+                        <div className="text-center">
+                          <Upload className={`mx-auto h-8 w-8 ${isDragOver ? 'text-primary-400' : 'text-surface-300'}`} />
+                          <p className="mt-2 text-sm text-surface-500">
+                            Arrastra tu logo aquí o{' '}
+                            <span className="font-medium text-primary-500">
+                              selecciona un archivo
+                            </span>
+                          </p>
+                          <p className="mt-1 text-xs text-surface-400">
+                            PNG, JPG hasta 2MB
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {logoError && (
+                      <p className="text-xs text-red-500 mt-1">{logoError}</p>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between gap-3">
