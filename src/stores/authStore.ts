@@ -46,19 +46,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: true,
 
   initialize: () => {
-    try {
-      supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-          set({ user: session.user });
-          await get().fetchProfile();
-          await get().fetchTeam();
-        } else {
-          set({ user: null, profile: null, team: null });
-        }
-        set({ loading: false });
-      });
-    } catch {
-      // TODO: Remove mock data when Supabase is configured
+    // Check current session immediately
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        set({ user: session.user });
+        await get().fetchProfile();
+        await get().fetchTeam();
+      } else {
+        set({ user: null, profile: null, team: null });
+      }
+      set({ loading: false });
+    }).catch(() => {
       console.warn('Supabase not configured, using mock data');
       set({
         user: { id: mockProfile.id, email: mockProfile.email } as User,
@@ -66,7 +64,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         team: mockTeam,
         loading: false,
       });
-    }
+    });
+
+    // Listen for future auth changes (login, logout, token refresh)
+    supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        set({ user: session.user });
+        await get().fetchProfile();
+        await get().fetchTeam();
+      } else {
+        set({ user: null, profile: null, team: null });
+      }
+      set({ loading: false });
+    });
   },
 
   loginWithGoogle: async () => {
