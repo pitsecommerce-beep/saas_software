@@ -3,6 +3,15 @@ import type { User } from '@supabase/supabase-js';
 import type { Profile, Team } from '@/types';
 import { supabase } from '@/lib/supabase';
 
+const isSupabaseConfigured = Boolean(
+  import.meta.env.VITE_SUPABASE_URL &&
+  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') &&
+  !import.meta.env.VITE_SUPABASE_URL.includes('your-project') &&
+  import.meta.env.VITE_SUPABASE_ANON_KEY &&
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('placeholder') &&
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('your-anon-key')
+);
+
 // TODO: Remove mock data when Supabase is configured
 const mockProfile: Profile = {
   id: 'mock-user-1',
@@ -46,6 +55,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: true,
 
   initialize: () => {
+    if (!isSupabaseConfigured) {
+      console.warn('Supabase not configured, using mock data');
+      set({
+        user: { id: mockProfile.id, email: mockProfile.email } as User,
+        profile: mockProfile,
+        team: mockTeam,
+        loading: false,
+      });
+      return;
+    }
+
     // Check current session immediately
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
@@ -57,7 +77,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       set({ loading: false });
     }).catch(() => {
-      console.warn('Supabase not configured, using mock data');
+      console.warn('Supabase getSession failed, using mock data');
       set({
         user: { id: mockProfile.id, email: mockProfile.email } as User,
         profile: mockProfile,
@@ -80,6 +100,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loginWithGoogle: async () => {
+    if (!isSupabaseConfigured) {
+      throw new Error('Google OAuth requiere Supabase configurado');
+    }
     set({ loading: true });
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -99,17 +122,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email: string, password: string) => {
     set({ loading: true });
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-    } catch {
-      // TODO: Remove mock data when Supabase is configured
+    if (!isSupabaseConfigured) {
       console.warn('Supabase not configured, using mock login');
       set({
         user: { id: mockProfile.id, email } as User,
         profile: { ...mockProfile, email },
         team: mockTeam,
+        loading: false,
       });
+      return;
+    }
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    } catch {
+      throw new Error('Credenciales incorrectas');
     } finally {
       set({ loading: false });
     }
@@ -117,6 +144,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   register: async (email: string, password: string, fullName: string) => {
     set({ loading: true });
+    if (!isSupabaseConfigured) {
+      console.warn('Supabase not configured, using mock register');
+      set({
+        user: { id: mockProfile.id, email } as User,
+        profile: { ...mockProfile, email, full_name: fullName },
+        team: null,
+        loading: false,
+      });
+      return;
+    }
     try {
       const { error } = await supabase.auth.signUp({
         email,
@@ -125,13 +162,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       if (error) throw error;
     } catch {
-      // TODO: Remove mock data when Supabase is configured
-      console.warn('Supabase not configured, using mock register');
-      set({
-        user: { id: mockProfile.id, email } as User,
-        profile: { ...mockProfile, email, full_name: fullName },
-        team: null,
-      });
+      throw new Error('Error al crear la cuenta');
     } finally {
       set({ loading: false });
     }
