@@ -98,9 +98,30 @@ src/
 - Gerente tiene acceso total a su equipo
 - Vendedor ve solo lo asignado
 
+## Autenticación
+
+### Métodos soportados
+- **Email/Password**: Registro y login tradicional
+- **Google OAuth**: Login/registro con Google (Supabase Auth Provider)
+
+### Configuración de Google OAuth
+1. Crear proyecto en Google Cloud Console
+2. Habilitar Google Identity API
+3. Crear credenciales OAuth 2.0 (Web application)
+4. Agregar redirect URI: `https://<SUPABASE_PROJECT_REF>.supabase.co/auth/v1/callback`
+5. En Supabase Dashboard > Authentication > Providers > Google: ingresar Client ID y Client Secret
+6. La app redirige a `/auth/callback` después del login OAuth
+
+### Flujo de OAuth
+1. Usuario clickea "Continuar con Google"
+2. Supabase redirige a Google para autenticación
+3. Google redirige de vuelta a Supabase con el token
+4. Supabase redirige a la app en `/auth/callback`
+5. `AuthCallbackPage` verifica la sesión y redirige a `/dashboard` o `/onboarding`
+
 ## Flujo de Onboarding
 
-1. Registro con email/password
+1. Registro con email/password o Google OAuth
 2. Formulario: ¿Eres proveedor de servicios o retailer?
 3. Se crea el equipo y se genera el código de equipo
 4. Se activan los módulos correspondientes
@@ -136,6 +157,26 @@ VITE_SUPABASE_ANON_KEY     - Anon key de Supabase
 VITE_YCLOUD_API_KEY        - API key de YCloud (para mensajería)
 ```
 
+### Configuración en Supabase Dashboard
+```
+Authentication > Providers > Google:
+  GOOGLE_CLIENT_ID         - Client ID de Google Cloud OAuth 2.0
+  GOOGLE_CLIENT_SECRET     - Client Secret de Google Cloud OAuth 2.0
+
+Authentication > URL Configuration:
+  Site URL                 - URL de tu frontend (ej: https://user.github.io/saas_software)
+  Redirect URLs            - Agregar: https://user.github.io/saas_software/auth/callback
+```
+
+### Variables de Railway (Backend/Webhooks)
+```
+SUPABASE_URL               - URL de tu proyecto Supabase
+SUPABASE_SERVICE_ROLE_KEY  - Service role key (NO la anon key)
+YCLOUD_API_KEY             - API key de YCloud
+YCLOUD_WEBHOOK_SECRET      - Secret para validar webhooks de YCloud
+PORT                       - Puerto (Railway lo asigna automáticamente)
+```
+
 ### Variables de Entorno de Supabase (Dashboard > Settings > Edge Functions)
 ```
 YCLOUD_API_KEY             - API key de YCloud
@@ -157,9 +198,25 @@ GOOGLE_AI_API_KEY          - Si se usa Google AI (lo pone el gerente)
 - Estilos con Tailwind utility classes
 - Animaciones con Framer Motion `motion` components
 
+## Despliegue en Railway
+
+Railway se usa para el backend que maneja webhooks de YCloud y procesa mensajes con IA.
+
+### Setup
+1. Crear nuevo proyecto en Railway
+2. Conectar repositorio de GitHub (o subir código del backend)
+3. Railway detecta automáticamente el `railway.json`
+4. Configurar variables de entorno en Railway Dashboard
+5. Obtener URL pública del servicio para configurar webhooks en YCloud
+
+### YCloud Webhook Configuration
+1. En YCloud Dashboard, crear webhook endpoint apuntando a: `https://<railway-url>/api/webhook/ycloud`
+2. Configurar eventos: `message.received`, `message.status_updated`
+3. Guardar el webhook secret en Railway como `YCLOUD_WEBHOOK_SECRET`
+
 ## Próximos Pasos (para futuras sesiones)
 
-1. Implementar Supabase Edge Functions para webhooks de YCloud
+1. Implementar servidor Express en Railway para webhooks de YCloud
 2. Implementar módulo de Logística completo
 3. Implementar módulo de Almacén
 4. Implementar módulo de Servicios
