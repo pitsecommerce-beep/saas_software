@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -13,18 +13,7 @@ import TeamPage from '@/pages/TeamPage';
 import SettingsPage from '@/pages/SettingsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuthStore();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-surface-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-3 border-primary-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-surface-500 text-sm">Cargando...</p>
-        </div>
-      </div>
-    );
-  }
+  const { user, profile } = useAuthStore();
 
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -39,17 +28,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  const { initialize } = useAuthStore();
-  const [ready, setReady] = useState(false);
+  const { initialize, loading } = useAuthStore();
 
   useEffect(() => {
     initialize();
-    // Small delay to let auth state settle
-    const timer = setTimeout(() => setReady(true), 100);
-    return () => clearTimeout(timer);
-  }, [initialize]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!ready) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-50">
         <div className="flex flex-col items-center gap-4">
