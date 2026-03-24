@@ -31,6 +31,7 @@ interface AuthState {
   loading: boolean;
   initialize: () => void;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
@@ -65,6 +66,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         team: mockTeam,
         loading: false,
       });
+    }
+  },
+
+  loginWithGoogle: async () => {
+    set({ loading: true });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}auth/callback`,
+        },
+      });
+      if (error) throw error;
+    } catch {
+      console.warn('Google OAuth failed');
+      throw new Error('Error al iniciar sesión con Google');
+    } finally {
+      set({ loading: false });
     }
   },
 

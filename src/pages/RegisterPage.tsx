@@ -5,17 +5,30 @@ import { motion } from 'framer-motion';
 import { Mail, Lock, User, Zap } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { GoogleIcon } from '@/components/ui/GoogleIcon';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register, loading } = useAuthStore();
+  const { register, loginWithGoogle, loading } = useAuthStore();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const handleGoogleRegister = async () => {
+    setError('');
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch {
+      setError('Error al registrarse con Google.');
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -191,6 +204,25 @@ export default function RegisterPage() {
               Crear cuenta
             </Button>
           </form>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-surface-200" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-surface-50 px-3 text-surface-400">o regístrate con</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleRegister}
+            disabled={googleLoading}
+            className="flex w-full items-center justify-center gap-3 rounded-xl border border-surface-200 bg-white px-4 py-3 text-sm font-medium text-surface-700 shadow-sm transition-all hover:bg-surface-50 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <GoogleIcon />
+            {googleLoading ? 'Conectando...' : 'Registrarse con Google'}
+          </button>
 
           <p className="text-center text-sm text-surface-500">
             ¿Ya tienes cuenta?{' '}

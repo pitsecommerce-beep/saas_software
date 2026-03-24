@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import type { FormEvent } from 'react';
 import { Eye, EyeOff, Bot, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -20,31 +20,13 @@ interface AIAgentConfigProps {
 }
 
 function AIAgentConfig({ agent, onSubmit, onCancel }: AIAgentConfigProps) {
-  const [name, setName] = useState('');
-  const [provider, setProvider] = useState<'openai' | 'anthropic' | 'google'>('openai');
-  const [model, setModel] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [isActive, setIsActive] = useState(true);
+  const [name, setName] = useState(agent?.name ?? '');
+  const [provider, setProvider] = useState<'openai' | 'anthropic' | 'google'>(agent?.provider ?? 'openai');
+  const [model, setModel] = useState(agent?.model ?? '');
+  const [apiKey, setApiKey] = useState(agent?.api_key_encrypted ?? '');
+  const [systemPrompt, setSystemPrompt] = useState(agent?.system_prompt ?? '');
+  const [isActive, setIsActive] = useState(agent?.is_active ?? true);
   const [showApiKey, setShowApiKey] = useState(false);
-
-  useEffect(() => {
-    if (agent) {
-      setName(agent.name);
-      setProvider(agent.provider);
-      setModel(agent.model);
-      setApiKey(agent.api_key_encrypted);
-      setSystemPrompt(agent.system_prompt);
-      setIsActive(agent.is_active);
-    } else {
-      setName('');
-      setProvider('openai');
-      setModel('');
-      setApiKey('');
-      setSystemPrompt('');
-      setIsActive(true);
-    }
-  }, [agent]);
 
   const selectedProvider = useMemo(
     () => AI_PROVIDERS.find((p) => p.id === provider),
@@ -64,13 +46,14 @@ function AIAgentConfig({ agent, onSubmit, onCancel }: AIAgentConfigProps) {
     label: p.name,
   }));
 
-  // Reset model when provider changes
-  useEffect(() => {
-    if (!agent || provider !== agent.provider) {
-      const recommended = selectedProvider?.models.find((m) => m.recommended);
-      setModel(recommended?.id ?? selectedProvider?.models[0]?.id ?? '');
+  const handleProviderChange = (newProvider: 'openai' | 'anthropic' | 'google') => {
+    setProvider(newProvider);
+    const newSelectedProvider = AI_PROVIDERS.find((p) => p.id === newProvider);
+    if (!agent || newProvider !== agent.provider) {
+      const recommended = newSelectedProvider?.models.find((m) => m.recommended);
+      setModel(recommended?.id ?? newSelectedProvider?.models[0]?.id ?? '');
     }
-  }, [provider, selectedProvider, agent]);
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -125,7 +108,7 @@ function AIAgentConfig({ agent, onSubmit, onCancel }: AIAgentConfigProps) {
           options={providerOptions}
           value={provider}
           onChange={(e) =>
-            setProvider(e.target.value as 'openai' | 'anthropic' | 'google')
+            handleProviderChange(e.target.value as 'openai' | 'anthropic' | 'google')
           }
         />
 

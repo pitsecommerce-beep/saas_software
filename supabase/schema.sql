@@ -426,11 +426,16 @@ CREATE POLICY "Gerente can manage invitations" ON team_invitations
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO profiles (id, email, full_name, role)
+  INSERT INTO profiles (id, email, full_name, avatar_url, role)
   VALUES (
     NEW.id,
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
+    COALESCE(
+      NEW.raw_user_meta_data->>'full_name',
+      NEW.raw_user_meta_data->>'name',
+      NEW.email
+    ),
+    NEW.raw_user_meta_data->>'avatar_url',
     'gerente'
   );
   RETURN NEW;
