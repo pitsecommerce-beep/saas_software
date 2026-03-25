@@ -126,7 +126,7 @@ export default function OnboardingPage() {
     let ownerId = profile?.id ?? user?.id;
     if (!ownerId) {
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      ownerId = authUser?.id ?? null;
+      ownerId = authUser?.id;
     }
 
     let success = false;
