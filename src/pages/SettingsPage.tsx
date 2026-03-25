@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Bot,
   MessageCircle,
@@ -23,6 +23,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { AIAgentConfig } from '@/components/settings/AIAgentConfig';
 import { ChannelConfig } from '@/components/settings/ChannelConfig';
 import { cn } from '@/lib/utils';
+import { useDemoStore } from '@/stores/demoStore';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -123,10 +124,15 @@ const TIMEZONE_OPTIONS = [
 // ---------------------------------------------------------------------------
 
 function SettingsPage() {
+  const { isDemoMode } = useDemoStore();
   const [activeTab, setActiveTab] = useState<TabId>('agents');
-  const [agents, setAgents] = useState<AIAgent[]>(MOCK_AGENTS);
-  const [assignments, setAssignments] =
-    useState<ChannelAssignment[]>(MOCK_ASSIGNMENTS);
+  const [agents, setAgents] = useState<AIAgent[]>([]);
+  const [assignments, setAssignments] = useState<ChannelAssignment[]>([]);
+
+  useEffect(() => {
+    setAgents(isDemoMode ? MOCK_AGENTS : []);
+    setAssignments(isDemoMode ? MOCK_ASSIGNMENTS : []);
+  }, [isDemoMode]);
   const [editingAgent, setEditingAgent] = useState<AIAgent | null>(null);
   const [showAgentModal, setShowAgentModal] = useState(false);
 

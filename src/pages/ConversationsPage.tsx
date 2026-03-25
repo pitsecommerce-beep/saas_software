@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { List, LayoutGrid, Plus, MessageSquare } from 'lucide-react';
+import { List, LayoutGrid, Plus, MessageSquare, Settings } from 'lucide-react';
+import { useDemoStore } from '@/stores/demoStore';
+import { useNavigate } from 'react-router-dom';
 import type { Conversation, Message, ConversationStatus } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -400,10 +402,18 @@ const mockMessages: Record<string, Message[]> = {
 type ViewMode = 'list' | 'canvas';
 
 export default function ConversationsPage() {
+  const navigate = useNavigate();
+  const { isDemoMode } = useDemoStore();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatModalOpen, setChatModalOpen] = useState(false);
+  const [newConvModalOpen, setNewConvModalOpen] = useState(false);
+
+  useEffect(() => {
+    setConversations(isDemoMode ? mockConversations : []);
+    setActiveConversationId(null);
+  }, [isDemoMode]);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) ?? null,
@@ -520,6 +530,7 @@ export default function ConversationsPage() {
 
           <Button
             size="sm"
+            onClick={() => setNewConvModalOpen(true)}
             icon={<Plus className="h-4 w-4" />}
           >
             Nueva conversacion
@@ -591,6 +602,35 @@ export default function ConversationsPage() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Nueva conversación info modal */}
+      <Modal
+        isOpen={newConvModalOpen}
+        onClose={() => setNewConvModalOpen(false)}
+        title="Nueva conversación"
+        size="sm"
+      >
+        <div className="flex flex-col items-center gap-4 py-4 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-50">
+            <MessageSquare className="h-7 w-7 text-primary-500" />
+          </div>
+          <div>
+            <p className="text-sm text-surface-600 leading-relaxed">
+              Las conversaciones se inician automáticamente cuando tus clientes te escriben por WhatsApp, Instagram o Messenger.
+            </p>
+            <p className="mt-2 text-sm text-surface-500">
+              Conecta tus canales en <strong>Configuración → Canales</strong> para comenzar a recibir mensajes.
+            </p>
+          </div>
+          <button
+            onClick={() => { setNewConvModalOpen(false); navigate('/settings'); }}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+            Ir a Configuración
+          </button>
+        </div>
+      </Modal>
 
       {/* Chat modal for canvas view */}
       {viewMode === 'canvas' && activeConversation && (

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Menu, Bell, Search } from 'lucide-react';
+import { Menu, Bell, Search, FlaskConical } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useDemoStore } from '@/stores/demoStore';
 
 interface HeaderProps {
   title: string;
@@ -9,6 +10,7 @@ interface HeaderProps {
 
 export function Header({ title, onMenuToggle }: HeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const { isDemoMode, setDemoMode } = useDemoStore();
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-surface-200 bg-white/80 px-4 backdrop-blur-sm sm:px-6">
@@ -49,6 +51,21 @@ export function Header({ title, onMenuToggle }: HeaderProps) {
             />
           )}
         </div>
+
+        {/* Demo mode toggle */}
+        <button
+          onClick={() => setDemoMode(!isDemoMode)}
+          title={isDemoMode ? 'Desactivar datos de demo' : 'Ver datos de demo'}
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+            isDemoMode
+              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+              : 'text-surface-500 hover:bg-surface-100 hover:text-surface-700',
+          )}
+        >
+          <FlaskConical className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">{isDemoMode ? 'Demo activo' : 'Demo'}</span>
+        </button>
 
         {/* Notifications */}
         <button className="relative rounded-lg p-2 text-surface-500 hover:bg-surface-100">
