@@ -70,15 +70,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     // In Supabase v2, onAuthStateChange fires immediately with INITIAL_SESSION
     // when there is a stored session, replacing the need for a separate getSession() call.
-    supabase.auth.onAuthStateChange(async (_event, session) => {
+    supabase.auth.onAuthStateChange(async (event, session) => {
       // First event received — clear the safety timeout.
       clearTimeout(safetyTimeout);
 
       try {
         if (session?.user) {
           set({ user: session.user });
-          await get().fetchProfile();
-          await get().fetchTeam();
+          // Only fetch profile/team on initial load and sign-in. For TOKEN_REFRESHED
+          // and other events we only need to update the user token — re-fetching the
+          // profile can overwrite a team_id that was just set during onboarding,
+          // causing an infinite onboarding loop.
+          if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+            await get().fetchProfile();
+            await get().fetchTeam();
+          }
         } else {
           set({ user: null, profile: null, team: null });
         }
