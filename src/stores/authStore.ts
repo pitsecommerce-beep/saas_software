@@ -48,23 +48,17 @@ interface AuthState {
   joinTeam: (inviteCode: string) => Promise<void>;
 }
 
+// If Supabase is not configured, pre-populate the store with mock data so
+// the app never renders in a loading state waiting for async initialization.
+const initialState = isSupabaseConfigured
+  ? { user: null as User | null, profile: null as Profile | null, team: null as Team | null, loading: true }
+  : { user: { id: mockProfile.id, email: mockProfile.email } as User, profile: mockProfile, team: mockTeam, loading: false };
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  profile: null,
-  team: null,
-  loading: true,
+  ...initialState,
 
   initialize: () => {
-    if (!isSupabaseConfigured) {
-      console.warn('Supabase not configured, using mock data');
-      set({
-        user: { id: mockProfile.id, email: mockProfile.email } as User,
-        profile: mockProfile,
-        team: mockTeam,
-        loading: false,
-      });
-      return;
-    }
+    if (!isSupabaseConfigured) return; // Already initialized with mock data at store creation
 
     // Check current session immediately
     supabase.auth.getSession().then(async ({ data: { session } }) => {
