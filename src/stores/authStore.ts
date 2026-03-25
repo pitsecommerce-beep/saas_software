@@ -32,15 +32,28 @@ const mockTeam: Team = {
   owner_id: 'mock-user-1',
 };
 
+interface PendingRegistration {
+  email: string;
+  password: string;
+  fullName: string;
+}
+
 interface AuthState {
   user: User | null;
   profile: Profile | null;
   team: Team | null;
   loading: boolean;
+  /** Credentials stored during registration, consumed atomically at end of onboarding. */
+  pendingRegistration: PendingRegistration | null;
   initialize: () => void;
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  /**
+   * Stores credentials temporarily without creating a Supabase auth user.
+   * The auth user, profile, and team are created together at the end of onboarding.
+   */
   register: (email: string, password: string, fullName: string) => Promise<void>;
+  clearPendingRegistration: () => void;
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   fetchTeam: () => Promise<void>;
@@ -50,8 +63,8 @@ interface AuthState {
 // If Supabase is not configured, pre-populate the store with mock data so
 // the app never renders in a loading state waiting for async initialization.
 const initialState = isSupabaseConfigured
-  ? { user: null as User | null, profile: null as Profile | null, team: null as Team | null, loading: true }
-  : { user: { id: mockProfile.id, email: mockProfile.email } as User, profile: mockProfile, team: mockTeam, loading: false };
+  ? { user: null as User | null, profile: null as Profile | null, team: null as Team | null, loading: true, pendingRegistration: null as PendingRegistration | null }
+  : { user: { id: mockProfile.id, email: mockProfile.email } as User, profile: mockProfile, team: mockTeam, loading: false, pendingRegistration: null as PendingRegistration | null };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   ...initialState,
@@ -139,45 +152,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   register: async (email: string, password: string, fullName: string) => {
-    set({ loading: true });
     if (!isSupabaseConfigured) {
+      // Mock mode: pre-populate store so the rest of the app works as usual.
       set({
         user: { id: mockProfile.id, email } as User,
         profile: { ...mockProfile, email, full_name: fullName, team_id: undefined },
         team: null,
-        loading: false,
       });
       return;
     }
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: fullName } },
-      });
-      if (error) throw error;
-
-      // Auto-create the profile row immediately after sign-up so the app
-      // never ends up with an authenticated user but no profile in the DB.
-      if (data.user) {
-        const { error: profileError } = await supabase.from('profiles').insert({
-          id: data.user.id,
-          email: email,
-          full_name: fullName,
-          role: 'gerente',
-          is_active: true,
-        });
-        if (profileError && profileError.code !== '23505') {
-          // 23505 = unique_violation (profile already exists), safe to ignore
-          console.warn('Could not create profile row:', profileError.message);
-        }
-      }
-      // loading: false will be set by onAuthStateChange (SIGNED_IN event)
-    } catch {
-      set({ loading: false });
-      throw new Error('Error al crear la cuenta');
-    }
+    // Defer Supabase auth user creation until the end of onboarding.
+    // This prevents orphaned auth users when onboarding is abandoned or fails.
+    set({ pendingRegistration: { email, password, fullName } });
   },
+
+  clearPendingRegistration: () => set({ pendingRegistration: null }),
 
   logout: async () => {
     set({ loading: true });
