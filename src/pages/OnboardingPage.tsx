@@ -113,13 +113,26 @@ export default function OnboardingPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const [createError, setCreateError] = useState('');
+
   const handleCreateTeam = async () => {
     setLoading(true);
+    setCreateError('');
+
     // The owner can be identified via profile (if already created) or the
     // raw auth user (if profile creation in register() failed for any reason).
-    const ownerId = profile?.id ?? user?.id;
+    // As a last resort, query Supabase auth directly — this handles the race
+    // where onAuthStateChange hasn't populated the store yet.
+    let ownerId = profile?.id ?? user?.id;
+    if (!ownerId) {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      ownerId = authUser?.id ?? null;
+    }
 
+    let success = false;
     try {
+      if (!ownerId) throw new Error('Usuario no autenticado');
+
       const { data: teamData, error: teamError } = await supabase
         .from('teams')
         .insert({
@@ -144,28 +157,29 @@ export default function OnboardingPage() {
       // Upsert the profile row: this handles two cases:
       //   1. Profile already exists → update team_id.
       //   2. Profile was never created (no DB trigger) → insert it now.
-      if (teamData && ownerId) {
-        await supabase.from('profiles').upsert({
-          id: ownerId,
-          email: profile?.email ?? user?.email ?? '',
-          full_name: profile?.full_name ?? (user?.user_metadata?.full_name as string) ?? '',
-          role: 'gerente',
-          is_active: true,
-          team_id: teamData.id,
-        });
-      }
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: ownerId,
+        email: profile?.email ?? user?.email ?? '',
+        full_name: profile?.full_name ?? (user?.user_metadata?.full_name as string) ?? '',
+        role: 'gerente',
+        is_active: true,
+        team_id: teamData.id,
+      });
+
+      if (profileError) throw profileError;
 
       // Refresh auth store so ProtectedRoute sees the updated team_id
       await fetchProfile();
       await fetchTeam();
+      success = true;
     } catch (err) {
       console.error('Error creating team:', err);
-      // Refresh anyway; in mock mode fetchProfile/fetchTeam hydrate with mock data
-      await fetchProfile();
-      await fetchTeam();
+      setCreateError('Error al crear el equipo. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
-      goNext();
+      // Only advance to the confirmation step if the team was created successfully.
+      // Staying on step 2 lets the user retry without getting stuck in the loop.
+      if (success) goNext();
     }
   };
 
@@ -473,6 +487,12 @@ export default function OnboardingPage() {
                       <p className="text-xs text-red-500 mt-1">{logoError}</p>
                     )}
                   </div>
+
+                  {createError && (
+                    <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">
+                      {createError}
+                    </p>
+                  )}
 
                   <div className="flex items-center justify-between gap-3">
                     <Button
