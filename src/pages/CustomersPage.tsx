@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Customer, ChannelType } from '@/types';
 import { motion } from 'framer-motion';
 import { UserPlus, FileSpreadsheet } from 'lucide-react';
+import { useDemoStore } from '@/stores/demoStore';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { CustomerTable } from '@/components/customers/CustomerTable';
@@ -116,7 +117,12 @@ const initialCustomers: Customer[] = [
 ];
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const { isDemoMode } = useDemoStore();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  useEffect(() => {
+    setCustomers(isDemoMode ? initialCustomers : []);
+  }, [isDemoMode]);
   const [searchQuery, setSearchQuery] = useState('');
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);

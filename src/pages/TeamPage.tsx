@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Profile, TeamInvitation, UserRole } from '@/types';
 import { motion } from 'framer-motion';
 import { Users, ShieldCheck, ShoppingCart, Truck, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { useDemoStore } from '@/stores/demoStore';
+import { useAuthStore } from '@/stores/authStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -116,11 +118,26 @@ const item = {
 };
 
 export default function TeamPage() {
-  const [members, setMembers] = useState<Profile[]>(mockMembers);
-  const [invitations, setInvitations] = useState<TeamInvitation[]>(mockInvitations);
-  const [inviteCode, setInviteCode] = useState('EQUIPO-A7X9K2');
+  const { isDemoMode } = useDemoStore();
+  const { profile, team } = useAuthStore();
 
-  const currentUserRole: UserRole = 'gerente';
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
+  const [inviteCode, setInviteCode] = useState('');
+
+  useEffect(() => {
+    if (isDemoMode) {
+      setMembers(mockMembers);
+      setInvitations(mockInvitations);
+      setInviteCode('EQUIPO-A7X9K2');
+    } else {
+      setMembers(profile ? [profile] : []);
+      setInvitations([]);
+      setInviteCode(team?.invite_code ?? '');
+    }
+  }, [isDemoMode, profile, team]);
+
+  const currentUserRole: UserRole = profile?.role ?? 'gerente';
 
   // Stats
   const totalMembers = members.length;

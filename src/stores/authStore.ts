@@ -169,16 +169,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   clearPendingRegistration: () => set({ pendingRegistration: null }),
 
   logout: async () => {
-    set({ loading: true });
+    // Clear auth state immediately so the UI redirects to /login without delay.
+    // Never set loading: true here — that would show the fullscreen spinner and
+    // could block navigation if signOut is slow or throws.
+    set({ user: null, profile: null, team: null, pendingRegistration: null });
     try {
       if (isSupabaseConfigured) {
-        const { error } = await supabase.auth.signOut();
-        if (error) throw error;
+        await supabase.auth.signOut();
       }
     } catch {
-      console.warn('signOut error, clearing state anyway');
-    } finally {
-      set({ user: null, profile: null, team: null, loading: false });
+      // State is already cleared — nothing left to do.
+      console.warn('signOut error, state already cleared');
     }
   },
 

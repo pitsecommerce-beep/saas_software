@@ -1,10 +1,11 @@
 'use client';
 
-import { MessageSquare, Users, Clock, ThumbsUp } from 'lucide-react';
+import { MessageSquare, Users, Clock, ThumbsUp, BarChart2, FlaskConical } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ConversationChart } from '@/components/dashboard/ConversationChart';
 import { ChannelDistribution } from '@/components/dashboard/ChannelDistribution';
 import { VendorPerformance } from '@/components/dashboard/VendorPerformance';
+import { useDemoStore } from '@/stores/demoStore';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -76,6 +77,32 @@ const vendorData = [
 // ---------------------------------------------------------------------------
 
 function DashboardPage() {
+  const { isDemoMode, setDemoMode } = useDemoStore();
+
+  if (!isDemoMode) {
+    return (
+      <div className="mx-auto max-w-7xl space-y-6 p-6">
+        <h1 className="text-2xl font-bold text-surface-900">Dashboard</h1>
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-surface-200 bg-white py-20 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-100 mb-4">
+            <BarChart2 className="h-8 w-8 text-surface-400" />
+          </div>
+          <h3 className="text-base font-semibold text-surface-700 mb-1">Sin datos aún</h3>
+          <p className="text-sm text-surface-500 max-w-sm mb-6">
+            Conecta tus canales y agrega clientes para ver estadísticas de conversaciones aquí.
+          </p>
+          <button
+            onClick={() => setDemoMode(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-amber-100 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-200 transition-colors"
+          >
+            <FlaskConical className="h-4 w-4" />
+            Ver datos de ejemplo
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <h1 className="text-2xl font-bold text-surface-900">Dashboard</h1>

@@ -22,7 +22,7 @@ function ConversationChart({ data }: ConversationChartProps) {
         Conversaciones (últimos 30 días)
       </h3>
       <div className="h-72">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={288}>
           <LineChart data={data} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
             <XAxis
