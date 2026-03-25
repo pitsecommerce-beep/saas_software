@@ -41,7 +41,7 @@ const slideVariants = {
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { user, profile, fetchProfile, fetchTeam } = useAuthStore();
+  const { user, profile, pendingRegistration, clearPendingRegistration, fetchProfile, fetchTeam } = useAuthStore();
 
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1);
@@ -119,18 +119,42 @@ export default function OnboardingPage() {
     setLoading(true);
     setCreateError('');
 
-    // The owner can be identified via profile (if already created) or the
-    // raw auth user (if profile creation in register() failed for any reason).
-    // As a last resort, query Supabase auth directly — this handles the race
-    // where onAuthStateChange hasn't populated the store yet.
-    let ownerId = profile?.id ?? user?.id;
-    if (!ownerId) {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      ownerId = authUser?.id;
-    }
-
+    // Track whether we created the auth user in this call so we can roll it
+    // back if a later step fails (prevents orphaned auth users).
+    let authCreatedHere = false;
     let success = false;
+
     try {
+      let ownerId = profile?.id ?? user?.id;
+      let ownerEmail = profile?.email ?? user?.email ?? '';
+      let ownerFullName =
+        profile?.full_name ?? (user?.user_metadata?.full_name as string) ?? '';
+
+      // If the user hasn't authenticated yet (deferred registration), create
+      // the Supabase auth user now — right before we create the team and profile,
+      // so all three succeed or fail together.
+      if (pendingRegistration && !ownerId) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: pendingRegistration.email,
+          password: pendingRegistration.password,
+          options: { data: { full_name: pendingRegistration.fullName } },
+        });
+        if (signUpError) throw signUpError;
+        if (!data.user) throw new Error('No se pudo crear el usuario de autenticación');
+
+        ownerId = data.user.id;
+        ownerEmail = pendingRegistration.email;
+        ownerFullName = pendingRegistration.fullName;
+        authCreatedHere = true;
+      }
+
+      // Last resort: query Supabase auth directly in case the store hasn't
+      // been populated yet (e.g. Google OAuth without a pending registration).
+      if (!ownerId) {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        ownerId = authUser?.id;
+      }
+
       if (!ownerId) throw new Error('Usuario no autenticado');
 
       const { data: teamData, error: teamError } = await supabase
@@ -154,13 +178,13 @@ export default function OnboardingPage() {
         await supabase.storage.from('logos').upload(path, logoFile, { upsert: true });
       }
 
-      // Upsert the profile row: this handles two cases:
-      //   1. Profile already exists → update team_id.
-      //   2. Profile was never created (no DB trigger) → insert it now.
+      // Upsert the profile row with team_id in a single operation:
+      //   - If the DB trigger already created it → updates team_id.
+      //   - If no trigger → inserts it now.
       const { error: profileError } = await supabase.from('profiles').upsert({
         id: ownerId,
-        email: profile?.email ?? user?.email ?? '',
-        full_name: profile?.full_name ?? (user?.user_metadata?.full_name as string) ?? '',
+        email: ownerEmail,
+        full_name: ownerFullName,
         role: 'gerente',
         is_active: true,
         team_id: teamData.id,
@@ -168,17 +192,24 @@ export default function OnboardingPage() {
 
       if (profileError) throw profileError;
 
+      clearPendingRegistration();
+
       // Refresh auth store so ProtectedRoute sees the updated team_id
       await fetchProfile();
       await fetchTeam();
       success = true;
     } catch (err) {
       console.error('Error creating team:', err);
+      // If we created the auth user in this attempt but subsequent steps failed,
+      // sign out to avoid leaving an orphaned auth user with no team.
+      if (authCreatedHere) {
+        await supabase.auth.signOut();
+      }
       setCreateError('Error al crear el equipo. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
-      // Only advance to the confirmation step if the team was created successfully.
-      // Staying on step 2 lets the user retry without getting stuck in the loop.
+      // Only advance to the confirmation step on success.
+      // Staying on step 2 lets the user retry without getting stuck.
       if (success) goNext();
     }
   };
