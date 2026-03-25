@@ -12,7 +12,6 @@ const isSupabaseConfigured = Boolean(
   !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('your-anon-key')
 );
 
-// TODO: Remove mock data when Supabase is configured
 const mockProfile: Profile = {
   id: 'mock-user-1',
   email: 'demo@example.com',
@@ -58,38 +57,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   ...initialState,
 
   initialize: () => {
-    if (!isSupabaseConfigured) return; // Already initialized with mock data at store creation
+    if (!isSupabaseConfigured) return;
 
-    // Check current session immediately
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        set({ user: session.user });
-        await get().fetchProfile();
-        await get().fetchTeam();
-      } else {
-        set({ user: null, profile: null, team: null });
+    // Safety net: if onAuthStateChange never fires or fetchProfile hangs,
+    // force exit loading after 10 seconds to avoid infinite loading screen.
+    const safetyTimeout = setTimeout(() => {
+      if (get().loading) {
+        console.warn('Auth initialization timed out — redirecting to login');
+        set({ user: null, profile: null, team: null, loading: false });
       }
-      set({ loading: false });
-    }).catch(() => {
-      console.warn('Supabase getSession failed, using mock data');
-      set({
-        user: { id: mockProfile.id, email: mockProfile.email } as User,
-        profile: mockProfile,
-        team: mockTeam,
-        loading: false,
-      });
-    });
+    }, 10000);
 
-    // Listen for future auth changes (login, logout, token refresh)
+    // In Supabase v2, onAuthStateChange fires immediately with INITIAL_SESSION
+    // when there is a stored session, replacing the need for a separate getSession() call.
     supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        set({ user: session.user });
-        await get().fetchProfile();
-        await get().fetchTeam();
-      } else {
+      // First event received — clear the safety timeout.
+      clearTimeout(safetyTimeout);
+
+      try {
+        if (session?.user) {
+          set({ user: session.user });
+          await get().fetchProfile();
+          await get().fetchTeam();
+        } else {
+          set({ user: null, profile: null, team: null });
+        }
+      } catch (err) {
+        console.error('Auth state change error:', err);
         set({ user: null, profile: null, team: null });
+      } finally {
+        // Always exit the loading state, no matter what happened above.
+        set({ loading: false });
       }
-      set({ loading: false });
     });
   },
 
@@ -107,17 +106,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       if (error) throw error;
     } catch {
-      console.warn('Google OAuth failed');
-      throw new Error('Error al iniciar sesión con Google');
-    } finally {
       set({ loading: false });
+      throw new Error('Error al iniciar sesión con Google');
     }
   },
 
   login: async (email: string, password: string) => {
     set({ loading: true });
     if (!isSupabaseConfigured) {
-      console.warn('Supabase not configured, using mock login');
       set({
         user: { id: mockProfile.id, email } as User,
         profile: { ...mockProfile, email },
@@ -129,47 +125,63 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      // loading: false will be set by onAuthStateChange (SIGNED_IN event)
     } catch {
-      throw new Error('Credenciales incorrectas');
-    } finally {
       set({ loading: false });
+      throw new Error('Credenciales incorrectas');
     }
   },
 
   register: async (email: string, password: string, fullName: string) => {
     set({ loading: true });
     if (!isSupabaseConfigured) {
-      console.warn('Supabase not configured, using mock register');
       set({
         user: { id: mockProfile.id, email } as User,
-        profile: { ...mockProfile, email, full_name: fullName },
+        profile: { ...mockProfile, email, full_name: fullName, team_id: undefined },
         team: null,
         loading: false,
       });
       return;
     }
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: fullName } },
       });
       if (error) throw error;
+
+      // Auto-create the profile row immediately after sign-up so the app
+      // never ends up with an authenticated user but no profile in the DB.
+      if (data.user) {
+        const { error: profileError } = await supabase.from('profiles').insert({
+          id: data.user.id,
+          email: email,
+          full_name: fullName,
+          role: 'gerente',
+          is_active: true,
+        });
+        if (profileError && profileError.code !== '23505') {
+          // 23505 = unique_violation (profile already exists), safe to ignore
+          console.warn('Could not create profile row:', profileError.message);
+        }
+      }
+      // loading: false will be set by onAuthStateChange (SIGNED_IN event)
     } catch {
-      throw new Error('Error al crear la cuenta');
-    } finally {
       set({ loading: false });
+      throw new Error('Error al crear la cuenta');
     }
   },
 
   logout: async () => {
     set({ loading: true });
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+      }
     } catch {
-      // TODO: Remove mock data when Supabase is configured
-      console.warn('Supabase not configured, using mock logout');
+      console.warn('signOut error, clearing state anyway');
     } finally {
       set({ user: null, profile: null, team: null, loading: false });
     }
@@ -179,18 +191,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get();
     if (!user) return;
 
+    if (!isSupabaseConfigured) {
+      set({ profile: mockProfile });
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
-      if (error) throw error;
+
+      if (error) {
+        // PGRST116 = no rows found — user has no profile yet (no DB trigger).
+        // Any other error is also treated as "no profile" so the user reaches onboarding.
+        console.warn('fetchProfile:', error.message);
+        set({ profile: null });
+        return;
+      }
+
       set({ profile: data as Profile });
-    } catch {
-      // TODO: Remove mock data when Supabase is configured
-      console.warn('Supabase not configured, using mock profile');
-      set({ profile: mockProfile });
+    } catch (err) {
+      console.error('fetchProfile unexpected error:', err);
+      set({ profile: null });
     }
   },
 
@@ -198,18 +222,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { profile } = get();
     if (!profile?.team_id) return;
 
+    if (!isSupabaseConfigured) {
+      set({ team: mockTeam });
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('teams')
         .select('*')
         .eq('id', profile.team_id)
         .single();
-      if (error) throw error;
+
+      if (error) {
+        console.warn('fetchTeam:', error.message);
+        set({ team: null });
+        return;
+      }
+
       set({ team: data as Team });
-    } catch {
-      // TODO: Remove mock data when Supabase is configured
-      console.warn('Supabase not configured, using mock team');
-      set({ team: mockTeam });
+    } catch (err) {
+      console.error('fetchTeam unexpected error:', err);
+      set({ team: null });
     }
   },
 
@@ -234,10 +268,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       set({ team: team as Team });
       await get().fetchProfile();
-    } catch {
-      // TODO: Remove mock data when Supabase is configured
-      console.warn('Supabase not configured, using mock joinTeam');
-      set({ team: mockTeam, profile: { ...mockProfile, team_id: mockTeam.id } });
+    } catch (err) {
+      console.error('joinTeam error:', err);
+      throw new Error('Código de invitación inválido');
     } finally {
       set({ loading: false });
     }

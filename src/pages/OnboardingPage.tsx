@@ -41,7 +41,7 @@ const slideVariants = {
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
-  const { profile, fetchProfile, fetchTeam } = useAuthStore();
+  const { user, profile, fetchProfile, fetchTeam } = useAuthStore();
 
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1);
@@ -115,6 +115,10 @@ export default function OnboardingPage() {
 
   const handleCreateTeam = async () => {
     setLoading(true);
+    // The owner can be identified via profile (if already created) or the
+    // raw auth user (if profile creation in register() failed for any reason).
+    const ownerId = profile?.id ?? user?.id;
+
     try {
       const { data: teamData, error: teamError } = await supabase
         .from('teams')
@@ -122,7 +126,7 @@ export default function OnboardingPage() {
           name: companyName,
           business_type: businessType,
           invite_code: inviteCode,
-          owner_id: profile?.id,
+          owner_id: ownerId,
           active_modules: ['conversations', 'customers', 'ai-agents'],
         })
         .select()
@@ -137,20 +141,26 @@ export default function OnboardingPage() {
         await supabase.storage.from('logos').upload(path, logoFile, { upsert: true });
       }
 
-      // Update profile with the new team_id
-      if (teamData && profile?.id) {
-        await supabase
-          .from('profiles')
-          .update({ team_id: teamData.id })
-          .eq('id', profile.id);
+      // Upsert the profile row: this handles two cases:
+      //   1. Profile already exists → update team_id.
+      //   2. Profile was never created (no DB trigger) → insert it now.
+      if (teamData && ownerId) {
+        await supabase.from('profiles').upsert({
+          id: ownerId,
+          email: profile?.email ?? user?.email ?? '',
+          full_name: profile?.full_name ?? (user?.user_metadata?.full_name as string) ?? '',
+          role: 'gerente',
+          is_active: true,
+          team_id: teamData.id,
+        });
       }
 
-      // Refresh auth store so ProtectedRoute sees the team_id
+      // Refresh auth store so ProtectedRoute sees the updated team_id
       await fetchProfile();
       await fetchTeam();
-    } catch {
-      console.warn('Supabase not configured, proceeding with mock data');
-      // In mock mode fetchProfile/fetchTeam will hydrate the store with mock team
+    } catch (err) {
+      console.error('Error creating team:', err);
+      // Refresh anyway; in mock mode fetchProfile/fetchTeam hydrate with mock data
       await fetchProfile();
       await fetchTeam();
     } finally {
