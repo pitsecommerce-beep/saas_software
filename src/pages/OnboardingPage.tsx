@@ -14,6 +14,8 @@ import {
   Zap,
   PartyPopper,
   X,
+  Hash,
+  Users,
 } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -53,7 +55,114 @@ export default function OnboardingPage() {
     return <Navigate to="/register" replace />;
   }
 
+  // Vendedores should NOT create teams — show a join-team form instead.
+  if (profile?.role === 'vendedor') {
+    return <VendedorJoinTeam />;
+  }
+
   return <OnboardingWizard />;
+}
+
+function VendedorJoinTeam() {
+  const navigate = useNavigate();
+  const { joinTeam, fetchProfile, fetchTeam, logout } = useAuthStore();
+  const [teamCode, setTeamCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!teamCode.trim()) return;
+    setError('');
+    setLoading(true);
+    try {
+      await joinTeam(teamCode.trim().toUpperCase());
+      await fetchProfile();
+      await fetchTeam();
+      navigate('/dashboard');
+    } catch {
+      setError('Código de equipo inválido. Verifica con tu gerente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="min-h-screen bg-surface-50 flex flex-col">
+      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-surface-100">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
+            <Zap className="h-5 w-5 text-white" />
+          </div>
+          <span className="text-xl font-bold text-surface-900">Orkesta</span>
+        </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex items-center gap-1.5 text-sm text-surface-400 hover:text-surface-600 transition-colors rounded-lg px-2 py-1 hover:bg-surface-100"
+        >
+          <X className="h-4 w-4" />
+          <span className="hidden sm:inline">Salir</span>
+        </button>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="w-full max-w-md space-y-8"
+        >
+          <div className="text-center">
+            <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-100 mb-4">
+              <Users className="h-8 w-8 text-primary-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-surface-900">Únete a tu equipo</h2>
+            <p className="mt-2 text-surface-500">
+              Ingresa el código de equipo que te compartió tu gerente para unirte.
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <Input
+              label="Código de equipo"
+              type="text"
+              icon={Hash}
+              placeholder="Ej: ABC12345"
+              value={teamCode}
+              onChange={(e) => setTeamCode(e.target.value.toUpperCase())}
+              required
+            />
+
+            {error && (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-sm text-danger-500 bg-danger-50 rounded-lg px-3 py-2"
+              >
+                {error}
+              </motion.p>
+            )}
+
+            <Button
+              type="submit"
+              loading={loading}
+              size="lg"
+              className="w-full"
+              disabled={!teamCode.trim()}
+            >
+              Unirme al equipo
+            </Button>
+          </form>
+        </motion.div>
+      </div>
+    </div>
+  );
 }
 
 function OnboardingWizard() {

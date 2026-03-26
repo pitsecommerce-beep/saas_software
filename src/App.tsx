@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
@@ -158,37 +158,50 @@ function App() {
 
   return (
     <BrowserRouter basename={import.meta.env.VITE_BASE_PATH ?? '/saas_software'}>
-      <AnimatePresence mode="wait">
-        <Routes>
-          {/* Public routes — redirect to dashboard if already authenticated */}
-          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
-          {/* Onboarding — accessible to users setting up their team */}
-          <Route path="/onboarding" element={<OnboardingPage />} />
-          {/* OAuth callback — always accessible */}
-          <Route path="/auth/callback" element={<AuthCallbackPage />} />
-          {/* Protected routes */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <MainLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="conversations" element={<ConversationsPage />} />
-            <Route path="customers" element={<CustomersPage />} />
-            <Route path="team" element={<TeamPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-          </Route>
-
-          {/* Catch all */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </AnimatePresence>
+      <AnimatedRoutes />
     </BrowserRouter>
+  );
+}
+
+function AnimatedRoutes() {
+  const location = useLocation();
+
+  // Use a simplified key: public auth pages get their own key for cross-fade,
+  // everything else groups under a single key so the MainLayout doesn't re-mount.
+  const isAuthPage = ['/login', '/register'].includes(location.pathname);
+  const routeKey = isAuthPage ? location.pathname : 'app';
+
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={routeKey}>
+        {/* Public routes — redirect to dashboard if already authenticated */}
+        <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+        <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+        {/* Onboarding — accessible to users setting up their team */}
+        <Route path="/onboarding" element={<OnboardingPage />} />
+        {/* OAuth callback — always accessible */}
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        {/* Protected routes */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="conversations" element={<ConversationsPage />} />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="team" element={<TeamPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+
+        {/* Catch all */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </AnimatePresence>
   );
 }
 

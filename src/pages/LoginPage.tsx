@@ -52,7 +52,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+      className="flex min-h-screen"
+    >
       {/* Brand / Illustration Side */}
       <motion.div
         initial={{ opacity: 0, x: -40 }}
@@ -207,6 +213,6 @@ export default function LoginPage() {
           </p>
         </div>
       </motion.div>
-    </div>
+    </motion.div>
   );
 }
