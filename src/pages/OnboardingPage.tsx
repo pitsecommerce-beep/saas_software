@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import type { FormEvent, DragEvent, ChangeEvent } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShoppingBag,
@@ -40,21 +40,16 @@ const slideVariants = {
 };
 
 export default function OnboardingPage() {
-  const navigate = useNavigate();
-  const { user, profile, pendingRegistration, clearPendingRegistration, fetchProfile, fetchTeam } = useAuthStore();
-
-  // Auth guard: only allow access if user has a pending registration (gerente flow)
-  // OR is authenticated (Google OAuth / existing user without team).
-  // If neither, redirect to register.
-  const hasAccess = pendingRegistration || user;
+  const { user, profile, pendingRegistration } = useAuthStore();
 
   // If user already has a profile with a team, redirect to dashboard.
   if (profile?.team_id) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // If no pending registration AND no authenticated user, redirect to register.
-  if (!hasAccess) {
+  // Auth guard: only allow access if user has a pending registration (gerente flow)
+  // OR is authenticated (Google OAuth / existing user without team).
+  if (!pendingRegistration && !user) {
     return <Navigate to="/register" replace />;
   }
 
