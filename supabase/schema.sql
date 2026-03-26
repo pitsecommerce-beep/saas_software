@@ -1,5 +1,5 @@
 -- ============================================
--- Beep SaaS - Supabase Database Schema
+-- Orkesta SaaS - Supabase Database Schema
 -- ============================================
 -- Run this in your Supabase SQL Editor to set up the database
 
@@ -486,3 +486,18 @@ CREATE INDEX idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX idx_inventory_product_id ON inventory(product_id);
 CREATE INDEX idx_inventory_warehouse_id ON inventory(warehouse_id);
 CREATE INDEX idx_teams_invite_code ON teams(invite_code);
+
+-- ============================================
+-- RPC: look up a team by invite code
+-- Runs with SECURITY DEFINER so unauthenticated/teamless users
+-- can find a team to join without needing to satisfy the RLS
+-- "Team members can view team" policy.
+-- ============================================
+CREATE OR REPLACE FUNCTION get_team_by_invite_code(p_invite_code TEXT)
+RETURNS SETOF teams
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT * FROM teams WHERE invite_code = p_invite_code LIMIT 1;
+$$;

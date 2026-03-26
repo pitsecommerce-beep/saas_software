@@ -112,7 +112,7 @@ export default function RegisterPage() {
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
                 <Zap className="h-8 w-8 text-white" />
               </div>
-              <h1 className="text-5xl font-bold tracking-tight">Beep</h1>
+              <h1 className="text-5xl font-bold tracking-tight">Orkesta</h1>
             </div>
             <p className="text-xl text-primary-100 font-medium mb-2">
               Tu asistente de ventas inteligente
@@ -161,7 +161,7 @@ export default function RegisterPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-500">
                 <Zap className="h-5 w-5 text-white" />
               </div>
-              <span className="text-3xl font-bold text-surface-900">Beep</span>
+              <span className="text-3xl font-bold text-surface-900">Orkesta</span>
             </div>
           </div>
 

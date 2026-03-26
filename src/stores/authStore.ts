@@ -278,12 +278,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      const { data: team, error: teamError } = await supabase
-        .from('teams')
-        .select('*')
-        .eq('invite_code', inviteCode)
-        .single();
-      if (teamError) throw new Error('Código de invitación inválido');
+      // Use an RPC with SECURITY DEFINER so users without a team_id
+      // can look up a team by invite code (the regular RLS policy only
+      // allows seeing teams you are already a member of).
+      const { data: teamRows, error: teamError } = await supabase
+        .rpc('get_team_by_invite_code', { p_invite_code: inviteCode });
+      const team = Array.isArray(teamRows) ? teamRows[0] : teamRows;
+      if (teamError || !team) throw new Error('Código de invitación inválido');
 
       const { user } = get();
       if (!user) throw new Error('Usuario no autenticado');

@@ -63,7 +63,7 @@ function SplashScreen() {
           transition={{ duration: 0.5, delay: 0.3 }}
           className="text-center"
         >
-          <h1 className="text-4xl font-bold text-white tracking-tight">Beep</h1>
+          <h1 className="text-4xl font-bold text-white tracking-tight">Orkesta</h1>
         </motion.div>
 
         {/* Dot loader */}
