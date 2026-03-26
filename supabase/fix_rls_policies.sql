@@ -243,6 +243,10 @@ BEGIN
     _role
   );
   RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  -- Never abort the auth.users INSERT; the app will create the profile row if needed.
+  RAISE WARNING 'handle_new_user failed for %: %', NEW.id, SQLERRM;
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
