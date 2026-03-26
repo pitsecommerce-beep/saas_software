@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  User,
 } from 'lucide-react';
 import type { Profile } from '@/types';
 import { cn } from '@/lib/utils';
@@ -45,8 +46,18 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('es-MX', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
 export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showProfilePanel, setShowProfilePanel] = useState(false);
 
   return (
     <>
@@ -79,7 +90,7 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
         <div className="flex h-16 items-center justify-between border-b border-surface-200 px-4">
           <div className="flex items-center gap-2 overflow-hidden">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">
-              B
+              O
             </div>
             <AnimatePresence>
               {!collapsed && (
@@ -90,7 +101,7 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden whitespace-nowrap text-lg font-bold text-surface-900"
                 >
-                  Beep
+                  Orkesta
                 </motion.span>
               )}
             </AnimatePresence>
@@ -160,31 +171,41 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
               collapsed && 'flex-col gap-2',
             )}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-500/10 text-sm font-semibold text-accent-500">
-              {profile ? getInitials(profile.full_name) : '??'}
-            </div>
-
-            <AnimatePresence>
-              {!collapsed && (
-                <motion.div
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="min-w-0 flex-1 overflow-hidden"
-                >
-                  <p className="truncate text-sm font-medium text-surface-900">
-                    {profile?.full_name ?? 'Usuario'}
-                  </p>
-                  <p className="truncate text-xs text-surface-500">
-                    {profile?.role ? roleLabels[profile.role] ?? profile.role : ''}
-                  </p>
-                </motion.div>
+            {/* Clickable avatar + name → opens profile panel */}
+            <button
+              onClick={() => setShowProfilePanel(true)}
+              title="Ver perfil"
+              className={cn(
+                'flex items-center gap-3 min-w-0 flex-1 rounded-lg hover:bg-surface-100 transition-colors text-left',
+                collapsed && 'flex-col gap-1 flex-none w-full',
               )}
-            </AnimatePresence>
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-500/10 text-sm font-semibold text-accent-500">
+                {profile ? getInitials(profile.full_name) : '??'}
+              </div>
+
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.div
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="min-w-0 flex-1 overflow-hidden"
+                  >
+                    <p className="truncate text-sm font-medium text-surface-900">
+                      {profile?.full_name ?? 'Usuario'}
+                    </p>
+                    <p className="truncate text-xs text-surface-500">
+                      {profile?.role ? roleLabels[profile.role] ?? profile.role : ''}
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </button>
 
             <button
-              onClick={onLogout}
+              onClick={() => setShowLogoutModal(true)}
               title="Cerrar sesión"
               className={cn(
                 'shrink-0 rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-red-50 hover:text-red-500',
@@ -196,6 +217,131 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
           </div>
         </div>
       </motion.aside>
+
+      {/* ── Logout confirmation modal ── */}
+      <AnimatePresence>
+        {showLogoutModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setShowLogoutModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+                  <LogOut className="h-5 w-5 text-red-500" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-surface-900">
+                    ¿Cerrar sesión?
+                  </h3>
+                  <p className="mt-1 text-sm text-surface-500">
+                    Se cerrará tu sesión en este dispositivo.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowLogoutModal(false)}
+                  className="rounded-xl px-4 py-2 text-sm font-medium text-surface-600 hover:bg-surface-100 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => { setShowLogoutModal(false); onLogout(); }}
+                  className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 transition-colors"
+                >
+                  Cerrar sesión
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Profile panel ── */}
+      <AnimatePresence>
+        {showProfilePanel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setShowProfilePanel(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-sm rounded-2xl bg-white shadow-xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-surface-100">
+                <h3 className="text-base font-semibold text-surface-900">Mi perfil</h3>
+                <button
+                  onClick={() => setShowProfilePanel(false)}
+                  className="rounded-lg p-1.5 text-surface-400 hover:bg-surface-100 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Avatar + name */}
+              <div className="flex flex-col items-center gap-3 px-5 py-6 bg-gradient-to-b from-primary-50 to-white">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-500/15 text-2xl font-bold text-accent-500">
+                  {profile ? getInitials(profile.full_name) : '??'}
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-semibold text-surface-900">
+                    {profile?.full_name ?? '—'}
+                  </p>
+                  <span className="inline-block mt-1 rounded-full bg-primary-100 px-3 py-0.5 text-xs font-medium text-primary-700">
+                    {profile?.role ? roleLabels[profile.role] ?? profile.role : '—'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Details */}
+              <div className="px-5 pb-5 space-y-3">
+                <div className="flex items-center gap-3 rounded-xl bg-surface-50 px-4 py-3">
+                  <User className="h-4 w-4 shrink-0 text-surface-400" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-surface-400">Correo electrónico</p>
+                    <p className="text-sm font-medium text-surface-800 truncate">
+                      {profile?.email ?? '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {profile?.created_at && (
+                  <div className="flex items-center gap-3 rounded-xl bg-surface-50 px-4 py-3">
+                    <div className="h-4 w-4 shrink-0 flex items-center justify-center">
+                      <div className="h-2 w-2 rounded-full bg-green-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-surface-400">Miembro desde</p>
+                      <p className="text-sm font-medium text-surface-800">
+                        {formatDate(profile.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

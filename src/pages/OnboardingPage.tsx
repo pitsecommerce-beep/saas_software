@@ -243,7 +243,7 @@ export default function OnboardingPage() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
             <Zap className="h-5 w-5 text-white" />
           </div>
-          <span className="text-xl font-bold text-surface-900">Beep</span>
+          <span className="text-xl font-bold text-surface-900">Orkesta</span>
         </div>
         <div className="flex items-center gap-4">
           <p className="text-sm text-surface-400">
