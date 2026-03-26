@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Bot,
   MessageCircle,
@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff,
   Network,
+  Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AIAgent, ChannelAssignment, ChannelType } from '@/types';
@@ -31,6 +32,16 @@ import { ChannelAgentConnector } from '@/components/settings/ChannelAgentConnect
 import { cn } from '@/lib/utils';
 import { useDemoStore } from '@/stores/demoStore';
 import { useAuthStore } from '@/stores/authStore';
+import { supabase } from '@/lib/supabase';
+
+const isSupabaseConfigured = Boolean(
+  import.meta.env.VITE_SUPABASE_URL &&
+  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') &&
+  !import.meta.env.VITE_SUPABASE_URL.includes('your-project') &&
+  import.meta.env.VITE_SUPABASE_ANON_KEY &&
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('placeholder') &&
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('your-anon-key')
+);
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -154,6 +165,7 @@ function SettingsPage() {
   const { isDemoMode } = useDemoStore();
   const { team, profile } = useAuthStore();
   const isManager = profile?.role === 'gerente';
+  const teamId = profile?.team_id ?? team?.id;
 
   const [activeTab, setActiveTab] = useState<TabId>('agents');
   const [agents, setAgents] = useState<AIAgent[]>(isDemoMode ? MOCK_AGENTS : []);
@@ -162,6 +174,7 @@ function SettingsPage() {
   );
   const [editingAgent, setEditingAgent] = useState<AIAgent | null>(null);
   const [showAgentModal, setShowAgentModal] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // General settings state — seeded from auth store team data
   const [companyName, setCompanyName] = useState(team?.name ?? '');
@@ -184,24 +197,67 @@ function SettingsPage() {
   };
 
   // ---------------------------------------------------------------------------
-  // Handlers
+  // Supabase data fetching
+  // ---------------------------------------------------------------------------
+  const loadData = useCallback(async () => {
+    if (!isSupabaseConfigured || !teamId || isDemoMode) return;
+    try {
+      const [agentsRes, assignRes] = await Promise.all([
+        supabase.from('ai_agents').select('*').eq('team_id', teamId).order('created_at', { ascending: false }),
+        supabase.from('channel_assignments').select('*, agent:ai_agents(*)').eq('team_id', teamId).order('created_at', { ascending: false }),
+      ]);
+      if (agentsRes.data) setAgents(agentsRes.data as AIAgent[]);
+      if (assignRes.data) setAssignments(assignRes.data as ChannelAssignment[]);
+    } catch (err) {
+      console.error('Failed to load settings data:', err);
+    } finally {
+      setDataLoaded(true);
+    }
+  }, [teamId, isDemoMode]);
+
+  useEffect(() => {
+    if (!dataLoaded) loadData();
+  }, [loadData, dataLoaded]);
+
+  // ---------------------------------------------------------------------------
+  // Handlers with Supabase persistence
   // ---------------------------------------------------------------------------
 
-  const handleAgentSubmit = (
+  const handleAgentSubmit = async (
     data: Omit<AIAgent, 'id' | 'team_id' | 'created_at'>
   ) => {
     if (editingAgent) {
+      // Update existing agent
+      if (isSupabaseConfigured && teamId) {
+        const { error } = await supabase
+          .from('ai_agents')
+          .update(data)
+          .eq('id', editingAgent.id)
+          .eq('team_id', teamId);
+        if (error) { console.error('Error updating agent:', error); return; }
+      }
       setAgents((prev) =>
         prev.map((a) => (a.id === editingAgent.id ? { ...a, ...data } : a))
       );
     } else {
-      const newAgent: AIAgent = {
-        ...data,
-        id: `agent-${Date.now()}`,
-        team_id: 'team-1',
-        created_at: new Date().toISOString(),
-      };
-      setAgents((prev) => [...prev, newAgent]);
+      // Create new agent
+      if (isSupabaseConfigured && teamId) {
+        const { data: inserted, error } = await supabase
+          .from('ai_agents')
+          .insert({ ...data, team_id: teamId })
+          .select()
+          .single();
+        if (error) { console.error('Error creating agent:', error); return; }
+        setAgents((prev) => [inserted as AIAgent, ...prev]);
+      } else {
+        const newAgent: AIAgent = {
+          ...data,
+          id: `agent-${Date.now()}`,
+          team_id: teamId ?? 'team-1',
+          created_at: new Date().toISOString(),
+        };
+        setAgents((prev) => [newAgent, ...prev]);
+      }
     }
     setShowAgentModal(false);
     setEditingAgent(null);
@@ -212,31 +268,78 @@ function SettingsPage() {
     setEditingAgent(null);
   };
 
-  const handleAddAssignment = (data: {
+  const handleDeleteAgent = async (agentId: string) => {
+    if (isSupabaseConfigured && teamId) {
+      const { error } = await supabase
+        .from('ai_agents')
+        .delete()
+        .eq('id', agentId)
+        .eq('team_id', teamId);
+      if (error) { console.error('Error deleting agent:', error); return; }
+    }
+    setAgents((prev) => prev.filter((a) => a.id !== agentId));
+    // Also remove any assignments pointing to this agent
+    setAssignments((prev) => prev.filter((a) => a.agent_id !== agentId));
+  };
+
+  const handleAddAssignment = async (data: {
     channel: ChannelType;
     channel_identifier: string;
     label: string;
     agent_id: string;
   }) => {
     const agent = agents.find((a) => a.id === data.agent_id);
-    const newAssignment: ChannelAssignment = {
-      id: `assign-${Date.now()}`,
-      team_id: 'team-1',
-      agent_id: data.agent_id,
-      agent,
-      channel: data.channel,
-      channel_identifier: data.channel_identifier,
-      label: data.label || undefined,
-      created_at: new Date().toISOString(),
-    };
-    setAssignments((prev) => [...prev, newAssignment]);
+
+    if (isSupabaseConfigured && teamId) {
+      const { data: inserted, error } = await supabase
+        .from('channel_assignments')
+        .insert({
+          team_id: teamId,
+          agent_id: data.agent_id,
+          channel: data.channel,
+          channel_identifier: data.channel_identifier,
+          label: data.label || null,
+        })
+        .select('*, agent:ai_agents(*)')
+        .single();
+      if (error) { console.error('Error creating assignment:', error); return; }
+      setAssignments((prev) => [inserted as ChannelAssignment, ...prev]);
+    } else {
+      const newAssignment: ChannelAssignment = {
+        id: `assign-${Date.now()}`,
+        team_id: teamId ?? 'team-1',
+        agent_id: data.agent_id,
+        agent,
+        channel: data.channel,
+        channel_identifier: data.channel_identifier,
+        label: data.label || undefined,
+        created_at: new Date().toISOString(),
+      };
+      setAssignments((prev) => [newAssignment, ...prev]);
+    }
   };
 
-  const handleDeleteAssignment = (id: string) => {
+  const handleDeleteAssignment = async (id: string) => {
+    if (isSupabaseConfigured && teamId) {
+      const { error } = await supabase
+        .from('channel_assignments')
+        .delete()
+        .eq('id', id)
+        .eq('team_id', teamId);
+      if (error) { console.error('Error deleting assignment:', error); return; }
+    }
     setAssignments((prev) => prev.filter((a) => a.id !== id));
   };
 
-  const handleUpdateAssignment = (id: string, agentId: string) => {
+  const handleUpdateAssignment = async (id: string, agentId: string) => {
+    if (isSupabaseConfigured && teamId) {
+      const { error } = await supabase
+        .from('channel_assignments')
+        .update({ agent_id: agentId })
+        .eq('id', id)
+        .eq('team_id', teamId);
+      if (error) { console.error('Error updating assignment:', error); return; }
+    }
     setAssignments((prev) =>
       prev.map((a) =>
         a.id === id
@@ -367,6 +470,14 @@ function SettingsPage() {
                           </div>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteAgent(agent.id); }}
+                        className="shrink-0 p-2 rounded-lg text-surface-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Eliminar agente"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </Card>
                   ))}
 
