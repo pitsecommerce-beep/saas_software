@@ -245,9 +245,22 @@ export default function OnboardingPage() {
           </div>
           <span className="text-xl font-bold text-surface-900">Beep</span>
         </div>
-        <p className="text-sm text-surface-400">
-          Paso {step} de {TOTAL_STEPS}
-        </p>
+        <div className="flex items-center gap-4">
+          <p className="text-sm text-surface-400">
+            Paso {step} de {TOTAL_STEPS}
+          </p>
+          {step < TOTAL_STEPS && (
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              className="flex items-center gap-1.5 text-sm text-surface-400 hover:text-surface-600 transition-colors rounded-lg px-2 py-1 hover:bg-surface-100"
+              title="Salir del registro"
+            >
+              <X className="h-4 w-4" />
+              <span className="hidden sm:inline">Salir</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Progress Bar */}
@@ -411,7 +424,15 @@ export default function OnboardingPage() {
                   </motion.button>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => navigate('/register')}
+                    icon={<ArrowLeft className="h-4 w-4" />}
+                  >
+                    Atrás
+                  </Button>
                   <Button
                     onClick={goNext}
                     disabled={!businessType}

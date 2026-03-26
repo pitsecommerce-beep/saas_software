@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
+import type { FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { List, LayoutGrid, Plus, MessageSquare, Settings } from 'lucide-react';
+import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
-import { useNavigate } from 'react-router-dom';
-import type { Conversation, Message, ConversationStatus } from '@/types';
+import type { Conversation, Message, ConversationStatus, Customer, ChannelType } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { ConversationList } from '@/components/conversations/ConversationList';
@@ -399,10 +399,35 @@ const mockMessages: Record<string, Message[]> = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// Mock customers for new-conversation picker
+// ---------------------------------------------------------------------------
+
+const mockCustomerList: Customer[] = [
+  { id: 'cust-1', team_id: 'team-1', name: 'Maria Garcia Lopez', email: 'maria@email.com', phone: '+52 55 1234 5678', channel: 'whatsapp', channel_id: '5215512345678', created_at: '', updated_at: '' },
+  { id: 'cust-2', team_id: 'team-1', name: 'Roberto Hernandez', phone: '+52 33 9876 5432', channel: 'whatsapp', channel_id: '5213398765432', created_at: '', updated_at: '' },
+  { id: 'cust-4', team_id: 'team-1', name: 'Ana Sofia Ramirez', email: 'ana.ramirez@gmail.com', phone: '+52 81 5555 1234', channel: 'messenger', channel_id: 'fb_ana_ramirez', created_at: '', updated_at: '' },
+  { id: 'cust-6', team_id: 'team-1', name: 'Luis Fernando Torres', phone: '+52 55 8888 4321', channel: 'whatsapp', channel_id: '5215588884321', created_at: '', updated_at: '' },
+  { id: 'cust-7', team_id: 'team-1', name: 'Patricia Vega', email: 'patricia.vega@empresa.mx', channel: 'instagram', channel_id: 'ig_patriciavega', created_at: '', updated_at: '' },
+  { id: 'cust-9', team_id: 'team-1', name: 'Patricia Flores Olvera', email: 'patty.flores@live.com', phone: '+52 55 2233 4455', channel: 'instagram', channel_id: 'ig_pattyflores', created_at: '', updated_at: '' },
+  { id: 'cust-10', team_id: 'team-1', name: 'Carlos Hernández Ruiz', email: 'carlos.hdz@hotmail.com', phone: '+52 33 9876 5432', channel: 'instagram', channel_id: 'ig_carlosh', created_at: '', updated_at: '' },
+];
+
+const CHANNEL_OPTIONS: { value: ChannelType; label: string; icon: typeof MessageCircle }[] = [
+  { value: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
+  { value: 'instagram', label: 'Instagram', icon: MessageCircle },
+  { value: 'messenger', label: 'Messenger', icon: MessagesSquare },
+];
+
+const channelColors: Record<ChannelType, string> = {
+  whatsapp: 'text-green-600 bg-green-50',
+  instagram: 'text-pink-600 bg-pink-50',
+  messenger: 'text-blue-600 bg-blue-50',
+};
+
 type ViewMode = 'list' | 'canvas';
 
 export default function ConversationsPage() {
-  const navigate = useNavigate();
   const { isDemoMode } = useDemoStore();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [conversations, setConversations] = useState<Conversation[]>(
@@ -411,6 +436,69 @@ export default function ConversationsPage() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatModalOpen, setChatModalOpen] = useState(false);
   const [newConvModalOpen, setNewConvModalOpen] = useState(false);
+
+  // New conversation form state
+  const [newConvSearch, setNewConvSearch] = useState('');
+  const [newConvCustomer, setNewConvCustomer] = useState<Customer | null>(null);
+  const [newConvChannel, setNewConvChannel] = useState<ChannelType | null>(null);
+  const [newConvMessage, setNewConvMessage] = useState('');
+  const [newConvSending, setNewConvSending] = useState(false);
+
+  const filteredCustomers = useMemo(() => {
+    const q = newConvSearch.toLowerCase();
+    if (!q) return mockCustomerList;
+    return mockCustomerList.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        c.phone?.includes(q)
+    );
+  }, [newConvSearch]);
+
+  const handleOpenNewConv = () => {
+    setNewConvSearch('');
+    setNewConvCustomer(null);
+    setNewConvChannel(null);
+    setNewConvMessage('');
+    setNewConvModalOpen(true);
+  };
+
+  const handleSendNewConversation = (e: FormEvent) => {
+    e.preventDefault();
+    if (!newConvCustomer || !newConvChannel || !newConvMessage.trim()) return;
+    setNewConvSending(true);
+
+    // Simulate creating conversation
+    setTimeout(() => {
+      const newConv: Conversation = {
+        id: `conv-new-${Date.now()}`,
+        team_id: 'team-1',
+        customer_id: newConvCustomer.id,
+        customer: newConvCustomer,
+        channel: newConvChannel,
+        channel_contact_id: newConvCustomer.channel_id ?? newConvCustomer.id,
+        status: 'active',
+        is_ai_enabled: false,
+        last_message: newConvMessage.trim(),
+        last_message_at: new Date().toISOString(),
+        unread_count: 0,
+        created_at: new Date().toISOString(),
+      };
+      mockMessages[newConv.id] = [
+        {
+          id: `msg-new-${Date.now()}`,
+          conversation_id: newConv.id,
+          sender_type: 'agent',
+          content: newConvMessage.trim(),
+          created_at: new Date().toISOString(),
+        },
+      ];
+      setConversations((prev) => [newConv, ...prev]);
+      setActiveConversationId(newConv.id);
+      setNewConvModalOpen(false);
+      setNewConvSending(false);
+    }, 700);
+  };
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) ?? null,
@@ -527,7 +615,7 @@ export default function ConversationsPage() {
 
           <Button
             size="sm"
-            onClick={() => setNewConvModalOpen(true)}
+            onClick={handleOpenNewConv}
             icon={<Plus className="h-4 w-4" />}
           >
             Nueva conversacion
@@ -600,33 +688,134 @@ export default function ConversationsPage() {
         </AnimatePresence>
       </div>
 
-      {/* Nueva conversación info modal */}
+      {/* Nueva conversación modal */}
       <Modal
         isOpen={newConvModalOpen}
         onClose={() => setNewConvModalOpen(false)}
         title="Nueva conversación"
-        size="sm"
+        size="md"
       >
-        <div className="flex flex-col items-center gap-4 py-4 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-50">
-            <MessageSquare className="h-7 w-7 text-primary-500" />
+        <form onSubmit={handleSendNewConversation} className="space-y-5">
+          {/* Step 1: pick customer */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-surface-700">1. Selecciona un cliente</p>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400" />
+              <input
+                type="text"
+                placeholder="Buscar por nombre, correo o teléfono..."
+                value={newConvSearch}
+                onChange={(e) => setNewConvSearch(e.target.value)}
+                className="w-full pl-9 pr-3.5 py-2.5 text-sm rounded-lg border border-surface-200 bg-surface-50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+              />
+            </div>
+            <div className="max-h-44 overflow-y-auto rounded-lg border border-surface-200 divide-y divide-surface-100">
+              {filteredCustomers.length === 0 ? (
+                <p className="text-center text-sm text-surface-400 py-4">Sin resultados</p>
+              ) : (
+                filteredCustomers.map((c) => {
+                  const isSelected = newConvCustomer?.id === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setNewConvCustomer(c);
+                        setNewConvChannel(c.channel);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-surface-50 ${
+                        isSelected ? 'bg-primary-50' : 'bg-white'
+                      }`}
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-100 text-xs font-bold text-surface-600">
+                        {c.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-surface-900 truncate">{c.name}</p>
+                        <p className="text-xs text-surface-400 truncate">{c.email ?? c.phone ?? c.channel}</p>
+                      </div>
+                      <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${channelColors[c.channel]}`}>
+                        {c.channel}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {newConvCustomer && (
+              <p className="text-xs text-primary-600 font-medium">
+                ✓ {newConvCustomer.name} seleccionado
+              </p>
+            )}
           </div>
-          <div>
-            <p className="text-sm text-surface-600 leading-relaxed">
-              Las conversaciones se inician automáticamente cuando tus clientes te escriben por WhatsApp, Instagram o Messenger.
-            </p>
-            <p className="mt-2 text-sm text-surface-500">
-              Conecta tus canales en <strong>Configuración → Canales</strong> para comenzar a recibir mensajes.
-            </p>
+
+          {/* Step 2: pick channel */}
+          <AnimatePresence>
+            {newConvCustomer && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-2"
+              >
+                <p className="text-sm font-medium text-surface-700">2. Canal de contacto</p>
+                <div className="flex gap-2">
+                  {CHANNEL_OPTIONS.map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setNewConvChannel(value)}
+                      className={`flex-1 flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 transition-all ${
+                        newConvChannel === value
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-surface-200 bg-white hover:border-surface-300'
+                      }`}
+                    >
+                      <Icon className={`h-5 w-5 ${newConvChannel === value ? 'text-primary-500' : 'text-surface-400'}`} />
+                      <span className="text-xs font-medium text-surface-700">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Step 3: message */}
+          <AnimatePresence>
+            {newConvCustomer && newConvChannel && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-2"
+              >
+                <p className="text-sm font-medium text-surface-700">3. Mensaje inicial</p>
+                <textarea
+                  rows={3}
+                  placeholder="Escribe el primer mensaje para este cliente..."
+                  value={newConvMessage}
+                  onChange={(e) => setNewConvMessage(e.target.value)}
+                  required
+                  className="w-full rounded-lg border border-surface-200 px-3.5 py-2.5 text-sm text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setNewConvModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              disabled={!newConvCustomer || !newConvChannel || !newConvMessage.trim()}
+              loading={newConvSending}
+              icon={<Send className="h-4 w-4" />}
+            >
+              Enviar mensaje
+            </Button>
           </div>
-          <button
-            onClick={() => { setNewConvModalOpen(false); navigate('/settings'); }}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors"
-          >
-            <Settings className="h-4 w-4" />
-            Ir a Configuración
-          </button>
-        </div>
+        </form>
       </Modal>
 
       {/* Chat modal for canvas view */}

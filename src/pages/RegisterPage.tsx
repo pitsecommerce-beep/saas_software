@@ -1,23 +1,28 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { Mail, Lock, User, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Mail, Lock, User, Zap, Users, Briefcase, Hash } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { GoogleIcon } from '@/components/ui/GoogleIcon';
 import { useAuthStore } from '@/stores/authStore';
 
+type RegistrationRole = 'gerente' | 'vendedor';
+
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register, loginWithGoogle, loading } = useAuthStore();
+  const { register, loginWithGoogle, joinTeam, loading } = useAuthStore();
 
+  const [role, setRole] = useState<RegistrationRole | null>(null);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [teamCode, setTeamCode] = useState('');
   const [error, setError] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [joiningLoading, setJoiningLoading] = useState(false);
 
   const handleGoogleRegister = async () => {
     setError('');
@@ -34,6 +39,11 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
 
+    if (!role) {
+      setError('Selecciona tu tipo de cuenta.');
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Las contraseñas no coinciden.');
       return;
@@ -44,24 +54,46 @@ export default function RegisterPage() {
       return;
     }
 
-    try {
-      await register(email, password, fullName);
-      navigate('/onboarding');
-    } catch {
-      setError('Error al crear la cuenta. Inténtalo de nuevo.');
+    if (role === 'vendedor') {
+      if (!teamCode.trim()) {
+        setError('Ingresa el código de equipo que te compartió tu gerente.');
+        return;
+      }
+      // Register and join team in one flow
+      setJoiningLoading(true);
+      try {
+        await register(email, password, fullName, 'vendedor');
+        await joinTeam(teamCode.trim().toUpperCase());
+        navigate('/dashboard');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '';
+        setError(msg.includes('invitación') || msg.includes('invite') || msg.includes('Código')
+          ? 'Código de equipo inválido. Verifica con tu gerente.'
+          : 'Error al crear la cuenta. Inténtalo de nuevo.');
+      } finally {
+        setJoiningLoading(false);
+      }
+    } else {
+      try {
+        await register(email, password, fullName, 'gerente');
+        navigate('/onboarding');
+      } catch {
+        setError('Error al crear la cuenta. Inténtalo de nuevo.');
+      }
     }
   };
 
+  const isLoading = loading || joiningLoading;
+
   return (
     <div className="flex min-h-screen">
-      {/* Brand / Illustration Side */}
+      {/* Brand Side */}
       <motion.div
         initial={{ opacity: 0, x: -40 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6, ease: 'easeOut' }}
         className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-primary-600 to-primary-800"
       >
-        {/* Decorative shapes */}
         <div className="absolute inset-0">
           <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-white/5" />
           <div className="absolute bottom-20 -left-16 h-72 w-72 rounded-full bg-white/5" />
@@ -120,9 +152,9 @@ export default function RegisterPage() {
         initial={{ opacity: 0, x: 40 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6, ease: 'easeOut' }}
-        className="flex w-full lg:w-1/2 items-center justify-center bg-surface-50 px-6 py-12"
+        className="flex w-full lg:w-1/2 items-center justify-center bg-surface-50 px-6 py-12 overflow-y-auto"
       >
-        <div className="w-full max-w-md space-y-8">
+        <div className="w-full max-w-md space-y-6">
           {/* Mobile brand header */}
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center gap-2 mb-2">
@@ -140,7 +172,49 @@ export default function RegisterPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Role selector */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-surface-700">Tipo de cuenta</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setRole('gerente')}
+                className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all duration-200 ${
+                  role === 'gerente'
+                    ? 'border-primary-500 bg-primary-50 shadow-sm shadow-primary-500/15'
+                    : 'border-surface-200 bg-white hover:border-surface-300'
+                }`}
+              >
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${role === 'gerente' ? 'bg-primary-500 text-white' : 'bg-surface-100 text-surface-500'}`}>
+                  <Briefcase className="h-5 w-5" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-surface-900">Gerente</p>
+                  <p className="text-xs text-surface-400 mt-0.5">Crea tu equipo</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRole('vendedor')}
+                className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all duration-200 ${
+                  role === 'vendedor'
+                    ? 'border-primary-500 bg-primary-50 shadow-sm shadow-primary-500/15'
+                    : 'border-surface-200 bg-white hover:border-surface-300'
+                }`}
+              >
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${role === 'vendedor' ? 'bg-primary-500 text-white' : 'bg-surface-100 text-surface-500'}`}>
+                  <Users className="h-5 w-5" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-surface-900">Agente de Ventas</p>
+                  <p className="text-xs text-surface-400 mt-0.5">Únete a un equipo</p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Nombre completo"
               type="text"
@@ -185,6 +259,34 @@ export default function RegisterPage() {
               autoComplete="new-password"
             />
 
+            {/* Team code field — only for agents */}
+            <AnimatePresence>
+              {role === 'vendedor' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="overflow-hidden"
+                >
+                  <div className="rounded-xl bg-primary-50 border border-primary-100 p-3 mb-2">
+                    <p className="text-xs text-primary-700">
+                      Pide a tu gerente el código de equipo para unirte.
+                    </p>
+                  </div>
+                  <Input
+                    label="Código de equipo"
+                    type="text"
+                    icon={Hash}
+                    placeholder="Ej: ABC12345"
+                    value={teamCode}
+                    onChange={(e) => setTeamCode(e.target.value.toUpperCase())}
+                    required={role === 'vendedor'}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {error && (
               <motion.p
                 initial={{ opacity: 0, y: -4 }}
@@ -197,32 +299,37 @@ export default function RegisterPage() {
 
             <Button
               type="submit"
-              loading={loading}
+              loading={isLoading}
               size="lg"
               className="w-full"
+              disabled={!role}
             >
-              Crear cuenta
+              {role === 'vendedor' ? 'Unirme al equipo' : 'Crear cuenta'}
             </Button>
           </form>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-surface-200" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-surface-50 px-3 text-surface-400">o regístrate con</span>
-            </div>
-          </div>
+          {role !== 'vendedor' && (
+            <>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-surface-200" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-surface-50 px-3 text-surface-400">o regístrate con</span>
+                </div>
+              </div>
 
-          <button
-            type="button"
-            onClick={handleGoogleRegister}
-            disabled={googleLoading}
-            className="flex w-full items-center justify-center gap-3 rounded-xl border border-surface-200 bg-white px-4 py-3 text-sm font-medium text-surface-700 shadow-sm transition-all hover:bg-surface-50 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <GoogleIcon />
-            {googleLoading ? 'Conectando...' : 'Registrarse con Google'}
-          </button>
+              <button
+                type="button"
+                onClick={handleGoogleRegister}
+                disabled={googleLoading}
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-surface-200 bg-white px-4 py-3 text-sm font-medium text-surface-700 shadow-sm transition-all hover:bg-surface-50 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <GoogleIcon />
+                {googleLoading ? 'Conectando...' : 'Registrarse con Google'}
+              </button>
+            </>
+          )}
 
           <p className="text-center text-sm text-surface-500">
             ¿Ya tienes cuenta?{' '}
