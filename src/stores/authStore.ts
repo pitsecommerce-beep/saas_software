@@ -197,24 +197,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (role === 'vendedor') {
       // For agents, create the auth user immediately so joinTeam can follow right after.
       // Pass the role in user metadata so the DB trigger creates the profile with the correct role.
+      let authUser: User | null = null;
+
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { full_name: fullName, role: 'vendedor' } },
       });
+
       if (signUpError) {
-        if (signUpError.message?.toLowerCase().includes('already registered') ||
+        // A 500 from Supabase often means the user was created in auth.users but
+        // a post-signup step failed (e.g. email sending, trigger error).
+        // Try signing in — if it works, the user was actually created.
+        if (signUpError.status === 500 || signUpError.message?.includes('500')) {
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+          if (signInError || !signInData.user) {
+            throw new Error('Error del servidor al crear la cuenta. Verifica la configuración de email en Supabase (Authentication → Email → desactiva "Confirm email") e inténtalo de nuevo.');
+          }
+          authUser = signInData.user;
+        } else if (signUpError.message?.toLowerCase().includes('already registered') ||
             signUpError.message?.toLowerCase().includes('already exists')) {
           throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
+        } else {
+          throw signUpError;
         }
-        throw signUpError;
-      }
-      if (!data.user) throw new Error('No se pudo crear el usuario');
-
-      // Supabase with email confirmation enabled returns a fake user with empty identities
-      // when the email is already taken (to prevent enumeration).
-      if (data.user.identities && data.user.identities.length === 0) {
-        throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
+      } else {
+        if (!data.user) throw new Error('No se pudo crear el usuario');
+        // Supabase with email confirmation enabled returns a fake user with empty identities
+        // when the email is already taken (to prevent enumeration).
+        if (data.user.identities && data.user.identities.length === 0) {
+          throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
+        }
+        authUser = data.user;
       }
 
       // The DB trigger handle_new_user() should have created the profile row.
@@ -225,25 +239,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('id, role')
-        .eq('id', data.user.id)
+        .eq('id', authUser.id)
         .maybeSingle();
 
       if (existingProfile) {
         // Profile exists — ensure role is 'vendedor' (old triggers may have defaulted to 'gerente').
         if (existingProfile.role !== 'vendedor') {
-          await supabase.from('profiles').update({ role: 'vendedor' }).eq('id', data.user.id);
+          await supabase.from('profiles').update({ role: 'vendedor' }).eq('id', authUser.id);
         }
       } else {
         // Trigger didn't create the profile — insert it manually.
         const { error: insertError } = await supabase
           .from('profiles')
-          .insert({ id: data.user.id, email, full_name: fullName, role: 'vendedor' });
+          .insert({ id: authUser.id, email, full_name: fullName, role: 'vendedor' });
         if (insertError) {
           console.warn('Could not create vendedor profile:', insertError.message);
         }
       }
 
-      set({ user: data.user, profile: { id: data.user.id, email, full_name: fullName, role: 'vendedor', is_active: true, created_at: new Date().toISOString() } });
+      set({ user: authUser, profile: { id: authUser.id, email, full_name: fullName, role: 'vendedor', is_active: true, created_at: new Date().toISOString() } });
       return;
     }
 
