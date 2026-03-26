@@ -173,6 +173,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
 
+    // Pre-flight check: try to detect if the email is already registered.
+    // Uses the check_email_exists RPC if available; silently skips if not deployed.
+    try {
+      const { data: exists } = await supabase.rpc('check_email_exists', { p_email: email });
+      if (exists) {
+        throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
+      }
+    } catch (rpcErr: unknown) {
+      // If the error is our own "Ya existe" message, re-throw it.
+      if (rpcErr instanceof Error && rpcErr.message.includes('Ya existe')) throw rpcErr;
+      // Otherwise the RPC is not deployed yet — fall through and let signUp catch duplicates.
+    }
+
     if (role === 'vendedor') {
       // For agents, create the auth user immediately so joinTeam can follow right after.
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -180,8 +193,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         password,
         options: { data: { full_name: fullName } },
       });
-      if (signUpError) throw signUpError;
+      if (signUpError) {
+        if (signUpError.message?.toLowerCase().includes('already registered') ||
+            signUpError.message?.toLowerCase().includes('already exists')) {
+          throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
+        }
+        throw signUpError;
+      }
       if (!data.user) throw new Error('No se pudo crear el usuario');
+
+      // Supabase with email confirmation enabled returns a fake user with empty identities
+      // when the email is already taken (to prevent enumeration).
+      if (data.user.identities && data.user.identities.length === 0) {
+        throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
+      }
 
       // Insert profile with role=vendedor but no team yet
       const { error: profileError } = await supabase.from('profiles').upsert({
