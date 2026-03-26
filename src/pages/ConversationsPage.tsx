@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { List, LayoutGrid, Plus, MessageSquare, Settings } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
@@ -405,15 +405,12 @@ export default function ConversationsPage() {
   const navigate = useNavigate();
   const { isDemoMode } = useDemoStore();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>(
+    isDemoMode ? mockConversations : []
+  );
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [chatModalOpen, setChatModalOpen] = useState(false);
   const [newConvModalOpen, setNewConvModalOpen] = useState(false);
-
-  useEffect(() => {
-    setConversations(isDemoMode ? mockConversations : []);
-    setActiveConversationId(null);
-  }, [isDemoMode]);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) ?? null,
