@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
@@ -7,36 +7,40 @@ import { useAuthStore } from '@/stores/authStore';
 
 export default function AuthCallbackPage() {
   const navigate = useNavigate();
-  const { fetchProfile, fetchTeam } = useAuthStore();
+  const handled = useRef(false);
 
   useEffect(() => {
+    // Guard against double-firing (React StrictMode / fast-refresh)
+    if (handled.current) return;
+    handled.current = true;
+
     const handleCallback = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
 
-      if (error || !session) {
+        if (error || !session) {
+          navigate('/login', { replace: true });
+          return;
+        }
+
+        const { fetchProfile, fetchTeam } = useAuthStore.getState();
+        await fetchProfile();
+        await fetchTeam();
+
+        const profile = useAuthStore.getState().profile;
+
+        if (profile?.team_id) {
+          navigate('/dashboard', { replace: true });
+        } else {
+          navigate('/onboarding', { replace: true });
+        }
+      } catch {
         navigate('/login', { replace: true });
-        return;
-      }
-
-      // Check if user already has a profile with a team
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('team_id')
-        .eq('id', session.user.id)
-        .single();
-
-      await fetchProfile();
-      await fetchTeam();
-
-      if (profile?.team_id) {
-        navigate('/dashboard', { replace: true });
-      } else {
-        navigate('/onboarding', { replace: true });
       }
     };
 
     handleCallback();
-  }, [navigate, fetchProfile, fetchTeam]);
+  }, [navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-50">

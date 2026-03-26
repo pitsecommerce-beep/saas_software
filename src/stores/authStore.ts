@@ -73,31 +73,41 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: () => {
     if (!isSupabaseConfigured) return;
 
-    // Safety net: if onAuthStateChange never fires or fetchProfile hangs,
-    // force exit loading after 10 seconds to avoid infinite loading screen.
+    // Prevent double-initialization (e.g. React StrictMode or hot-reload).
+    if ((useAuthStore as unknown as { _initialized?: boolean })._initialized) return;
+    (useAuthStore as unknown as { _initialized?: boolean })._initialized = true;
+
+    // Safety net: force exit loading after 6 seconds to avoid infinite loading screen.
+    // This timeout is NOT cleared early — it always fires if loading is still true,
+    // covering cases where fetchProfile/fetchTeam hang after the auth event fires.
     const safetyTimeout = setTimeout(() => {
       if (get().loading) {
         console.warn('Auth initialization timed out — redirecting to login');
         set({ user: null, profile: null, team: null, loading: false });
       }
-    }, 10000);
+    }, 6000);
 
-    // In Supabase v2, onAuthStateChange fires immediately with INITIAL_SESSION
-    // when there is a stored session, replacing the need for a separate getSession() call.
     supabase.auth.onAuthStateChange(async (event, session) => {
-      // First event received — clear the safety timeout.
-      clearTimeout(safetyTimeout);
-
       try {
         if (session?.user) {
           set({ user: session.user });
-          // Only fetch profile/team on initial load and sign-in. For TOKEN_REFRESHED
-          // and other events we only need to update the user token — re-fetching the
-          // profile can overwrite a team_id that was just set during onboarding,
-          // causing an infinite onboarding loop.
           if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-            await get().fetchProfile();
-            await get().fetchTeam();
+            // Wrap fetches in a race against a per-operation timeout so a
+            // hanging request doesn't block the app forever.
+            const withTimeout = <T>(p: Promise<T>, ms = 5000): Promise<T> =>
+              Promise.race([
+                p,
+                new Promise<T>((_, reject) =>
+                  setTimeout(() => reject(new Error('Fetch timed out')), ms)
+                ),
+              ]);
+
+            try {
+              await withTimeout(get().fetchProfile());
+              await withTimeout(get().fetchTeam());
+            } catch (fetchErr) {
+              console.warn('Profile/team fetch timed out or failed:', fetchErr);
+            }
           }
         } else {
           set({ user: null, profile: null, team: null });
@@ -106,7 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         console.error('Auth state change error:', err);
         set({ user: null, profile: null, team: null });
       } finally {
-        // Always exit the loading state, no matter what happened above.
+        clearTimeout(safetyTimeout);
         set({ loading: false });
       }
     });

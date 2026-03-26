@@ -100,6 +100,7 @@ import ConversationsPage from '@/pages/ConversationsPage';
 import CustomersPage from '@/pages/CustomersPage';
 import TeamPage from '@/pages/TeamPage';
 import SettingsPage from '@/pages/SettingsPage';
+import AuthCallbackPage from '@/pages/AuthCallbackPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile } = useAuthStore();
@@ -136,6 +137,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
           {/* Protected routes */}
           <Route
             path="/"
