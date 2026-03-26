@@ -549,7 +549,15 @@ CREATE POLICY "Team members can manage inventory" ON inventory
 -- Auto-create profile on user signup
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  _role TEXT;
 BEGIN
+  -- Read role from user metadata; default to 'vendedor' if not provided or invalid.
+  _role := COALESCE(NEW.raw_user_meta_data->>'role', 'vendedor');
+  IF _role NOT IN ('gerente', 'vendedor', 'logistica') THEN
+    _role := 'vendedor';
+  END IF;
+
   INSERT INTO profiles (id, email, full_name, avatar_url, role)
   VALUES (
     NEW.id,
@@ -560,7 +568,7 @@ BEGIN
       NEW.email
     ),
     NEW.raw_user_meta_data->>'avatar_url',
-    'gerente'
+    _role
   );
   RETURN NEW;
 END;

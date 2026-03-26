@@ -196,10 +196,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (role === 'vendedor') {
       // For agents, create the auth user immediately so joinTeam can follow right after.
+      // Pass the role in user metadata so the DB trigger creates the profile with the correct role.
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName } },
+        options: { data: { full_name: fullName, role: 'vendedor' } },
       });
       if (signUpError) {
         if (signUpError.message?.toLowerCase().includes('already registered') ||
@@ -216,16 +217,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
       }
 
-      // The DB trigger handle_new_user() already creates a profile row.
-      // Wait briefly for it to complete, then update the role.
+      // The DB trigger handle_new_user() should have created the profile row.
+      // Wait briefly, then verify it exists. If the trigger didn't fire, create
+      // the profile manually as a fallback.
       await new Promise((r) => setTimeout(r, 500));
 
-      const { error: profileError } = await supabase
+      const { data: existingProfile } = await supabase
         .from('profiles')
-        .update({ role: 'vendedor' })
-        .eq('id', data.user.id);
-      if (profileError) {
-        console.warn('Could not update vendedor role, trigger may not have fired:', profileError.message);
+        .select('id, role')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (existingProfile) {
+        // Profile exists — ensure role is 'vendedor' (old triggers may have defaulted to 'gerente').
+        if (existingProfile.role !== 'vendedor') {
+          await supabase.from('profiles').update({ role: 'vendedor' }).eq('id', data.user.id);
+        }
+      } else {
+        // Trigger didn't create the profile — insert it manually.
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({ id: data.user.id, email, full_name: fullName, role: 'vendedor' });
+        if (insertError) {
+          console.warn('Could not create vendedor profile:', insertError.message);
+        }
       }
 
       set({ user: data.user, profile: { id: data.user.id, email, full_name: fullName, role: 'vendedor', is_active: true, created_at: new Date().toISOString() } });

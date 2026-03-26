@@ -154,7 +154,7 @@ function OnboardingWizard() {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: pendingRegistration.email,
           password: pendingRegistration.password,
-          options: { data: { full_name: pendingRegistration.fullName } },
+          options: { data: { full_name: pendingRegistration.fullName, role: 'gerente' } },
         });
         if (signUpError) {
           if (signUpError.message?.toLowerCase().includes('already registered') ||
