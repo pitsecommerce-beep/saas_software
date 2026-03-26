@@ -10,5 +10,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  base: '/saas_software/',
+  // Use '/' in production (Railway), '/saas_software/' for local GitHub Pages dev
+  base: process.env.VITE_BASE_PATH ?? '/saas_software/',
 })

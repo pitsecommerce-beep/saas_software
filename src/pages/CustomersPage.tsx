@@ -3,12 +3,27 @@
 import { useState } from 'react';
 import type { Customer, ChannelType } from '@/types';
 import { motion } from 'framer-motion';
-import { UserPlus, FileSpreadsheet } from 'lucide-react';
+import { UserPlus, FileSpreadsheet, Upload, Download, AlertCircle } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { CustomerTable } from '@/components/customers/CustomerTable';
 import { CustomerForm } from '@/components/customers/CustomerForm';
+import { TemplateDownloader } from '@/components/excel/TemplateDownloader';
+
+const CUSTOMER_TEMPLATE_COLUMNS = [
+  { name: 'RFC', example: 'XAXX010101000' },
+  { name: 'NOMBRE CONTACTO', example: 'Juan Pérez García' },
+  { name: 'NOMBRE DE NEGOCIO', example: 'Refacciones El Rey' },
+  { name: 'ES TALLER', example: 'Sí' },
+  { name: 'ES DISTRIBUIDOR', example: 'No' },
+  { name: 'DIRECCIÓN', example: 'Av. Reforma 123, Col. Centro, CDMX' },
+  { name: 'CELULAR', example: '+52 55 1234 5678' },
+  { name: 'CORREO ELECTRÓNICO', example: 'juan.perez@negocio.com' },
+  { name: 'CANAL ORIGEN', example: 'Instagram' },
+  { name: 'USUARIO INSTA / MESSENGER', example: '@juanperez_refacciones' },
+  { name: 'NOTAS', example: 'Cliente frecuente, prefiere pago en efectivo' },
+];
 
 // TODO: Replace with useCustomerStore when Supabase is connected
 const initialCustomers: Customer[] = [
@@ -270,16 +285,59 @@ export default function CustomersPage() {
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         title="Importar Clientes desde Excel"
+        size="md"
       >
-        {/* TODO: Replace with ExcelUploader component */}
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <FileSpreadsheet className="h-12 w-12 text-surface-300 mb-4" />
-          <p className="text-surface-500 font-medium">
-            Componente de carga Excel
-          </p>
-          <p className="text-sm text-surface-400 mt-1">
-            Arrastra un archivo .xlsx o .csv para importar clientes
-          </p>
+        <div className="space-y-5">
+          {/* Template download */}
+          <div className="rounded-xl bg-surface-50 border border-surface-200 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Download className="h-4 w-4 text-primary-500" />
+              <p className="text-sm font-semibold text-surface-800">Paso 1: Descarga la plantilla</p>
+            </div>
+            <p className="text-xs text-surface-500 leading-relaxed">
+              La plantilla incluye las columnas necesarias: RFC, nombre del contacto, negocio, tipo (taller o distribuidor), dirección, celular, correo, canal de origen e usuario de redes sociales.
+            </p>
+            <TemplateDownloader
+              templateName="Plantilla_Clientes_Beep"
+              columns={CUSTOMER_TEMPLATE_COLUMNS}
+            />
+          </div>
+
+          {/* Column preview */}
+          <div className="rounded-xl bg-surface-50 border border-surface-200 p-4 space-y-2">
+            <p className="text-xs font-semibold text-surface-600 uppercase tracking-wide">Columnas incluidas</p>
+            <div className="flex flex-wrap gap-1.5">
+              {CUSTOMER_TEMPLATE_COLUMNS.map((col) => (
+                <span key={col.name} className="inline-flex items-center rounded-md bg-white border border-surface-200 px-2 py-0.5 text-xs text-surface-600 font-medium">
+                  {col.name}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Upload area */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Upload className="h-4 w-4 text-primary-500" />
+              <p className="text-sm font-semibold text-surface-800">Paso 2: Sube tu archivo</p>
+            </div>
+            <label className="flex flex-col items-center justify-center w-full rounded-xl border-2 border-dashed border-surface-200 bg-surface-50 px-6 py-10 cursor-pointer hover:border-primary-300 hover:bg-primary-50/30 transition-colors">
+              <FileSpreadsheet className="h-10 w-10 text-surface-300 mb-3" />
+              <p className="text-sm text-surface-500 text-center">
+                Arrastra tu archivo aquí o{' '}
+                <span className="font-medium text-primary-500">selecciona un archivo</span>
+              </p>
+              <p className="text-xs text-surface-400 mt-1">Excel (.xlsx) o CSV — máx. 5MB</p>
+              <input type="file" accept=".xlsx,.csv" className="hidden" />
+            </label>
+          </div>
+
+          <div className="flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
+            <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700">
+              Usa exactamente los nombres de columna de la plantilla para que la importación funcione correctamente.
+            </p>
+          </div>
         </div>
       </Modal>
 

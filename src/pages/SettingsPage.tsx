@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import {
   Bot,
@@ -9,6 +7,13 @@ import {
   Sparkles,
   Building2,
   Globe,
+  Zap,
+  Key,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Network,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AIAgent, ChannelAssignment, ChannelType } from '@/types';
@@ -22,8 +27,10 @@ import { Modal } from '@/components/ui/Modal';
 import { Toggle } from '@/components/ui/Toggle';
 import { AIAgentConfig } from '@/components/settings/AIAgentConfig';
 import { ChannelConfig } from '@/components/settings/ChannelConfig';
+import { ChannelAgentConnector } from '@/components/settings/ChannelAgentConnector';
 import { cn } from '@/lib/utils';
 import { useDemoStore } from '@/stores/demoStore';
+import { useAuthStore } from '@/stores/authStore';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -94,16 +101,18 @@ const MOCK_ASSIGNMENTS: ChannelAssignment[] = [
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabId = 'agents' | 'channels' | 'general';
+type TabId = 'agents' | 'channels' | 'connector' | 'ycloud' | 'general';
 
 const TABS: { id: TabId; label: string; icon: typeof Bot }[] = [
   { id: 'agents', label: 'Agentes de IA', icon: Bot },
   { id: 'channels', label: 'Canales', icon: MessageCircle },
+  { id: 'connector', label: 'Conexiones', icon: Network },
+  { id: 'ycloud', label: 'yCloud', icon: Zap },
   { id: 'general', label: 'General', icon: Settings },
 ];
 
 // ---------------------------------------------------------------------------
-// Timezone options (subset for brevity)
+// Timezone options
 // ---------------------------------------------------------------------------
 
 const TIMEZONE_OPTIONS = [
@@ -120,11 +129,32 @@ const TIMEZONE_OPTIONS = [
 ];
 
 // ---------------------------------------------------------------------------
+// yCloud integration status helper
+// ---------------------------------------------------------------------------
+
+function YCloudStatusBadge({ connected }: { connected: boolean }) {
+  return connected ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+      <CheckCircle2 className="h-3.5 w-3.5" />
+      Conectado
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-100 px-2.5 py-1 text-xs font-medium text-surface-500">
+      <AlertCircle className="h-3.5 w-3.5" />
+      Sin configurar
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 function SettingsPage() {
   const { isDemoMode } = useDemoStore();
+  const { team, profile } = useAuthStore();
+  const isManager = profile?.role === 'gerente';
+
   const [activeTab, setActiveTab] = useState<TabId>('agents');
   const [agents, setAgents] = useState<AIAgent[]>(isDemoMode ? MOCK_AGENTS : []);
   const [assignments, setAssignments] = useState<ChannelAssignment[]>(
@@ -133,16 +163,28 @@ function SettingsPage() {
   const [editingAgent, setEditingAgent] = useState<AIAgent | null>(null);
   const [showAgentModal, setShowAgentModal] = useState(false);
 
-  // General settings state
-  const [companyName, setCompanyName] = useState('Mi Empresa S.A. de C.V.');
-  const [businessType] = useState('retailer');
+  // General settings state — seeded from auth store team data
+  const [companyName, setCompanyName] = useState(team?.name ?? '');
   const [timezone, setTimezone] = useState('America/Mexico_City');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [autoAssignEnabled, setAutoAssignEnabled] = useState(true);
 
+  // yCloud settings
+  const [yCloudApiKey, setYCloudApiKey] = useState('');
+  const [yCloudPhoneNumberId, setYCloudPhoneNumberId] = useState('');
+  const [yCloudWebhookToken, setYCloudWebhookToken] = useState('');
+  const [showYCloudKey, setShowYCloudKey] = useState(false);
+  const [yCloudSaved, setYCloudSaved] = useState(false);
+  const isYCloudConnected = yCloudApiKey.length > 0 && yCloudPhoneNumberId.length > 0;
+
+  const handleSaveYCloud = () => {
+    // TODO: persist to Supabase / env
+    setYCloudSaved(true);
+    setTimeout(() => setYCloudSaved(false), 2500);
+  };
+
   // ---------------------------------------------------------------------------
   // Handlers
-  // TODO: Replace with Supabase operations when connected
   // ---------------------------------------------------------------------------
 
   const handleAgentSubmit = (
@@ -194,6 +236,16 @@ function SettingsPage() {
     setAssignments((prev) => prev.filter((a) => a.id !== id));
   };
 
+  const handleUpdateAssignment = (id: string, agentId: string) => {
+    setAssignments((prev) =>
+      prev.map((a) =>
+        a.id === id
+          ? { ...a, agent_id: agentId, agent: agents.find((ag) => ag.id === agentId) }
+          : a
+      )
+    );
+  };
+
   const openEditAgent = (agent: AIAgent) => {
     setEditingAgent(agent);
     setShowAgentModal(true);
@@ -203,10 +255,6 @@ function SettingsPage() {
     setEditingAgent(null);
     setShowAgentModal(true);
   };
-
-  // ---------------------------------------------------------------------------
-  // Provider helper
-  // ---------------------------------------------------------------------------
 
   const getProviderName = (providerId: string) =>
     AI_PROVIDERS.find((p) => p.id === providerId)?.name ?? providerId;
@@ -225,17 +273,14 @@ function SettingsPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Page header */}
         <div>
-          <h1 className="text-2xl font-bold text-surface-900">
-            Configuración
-          </h1>
+          <h1 className="text-2xl font-bold text-surface-900">Configuración</h1>
           <p className="text-sm text-surface-500 mt-1">
-            Administra tus agentes de IA, canales de comunicación y
-            preferencias generales.
+            Administra tus agentes de IA, canales de comunicación y preferencias generales.
           </p>
         </div>
 
         {/* Tab navigation */}
-        <div className="flex gap-1 rounded-xl bg-surface-100 p-1">
+        <div className="flex gap-1 rounded-xl bg-surface-100 p-1 overflow-x-auto">
           {TABS.map((tab) => {
             const TabIcon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -244,7 +289,7 @@ function SettingsPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  'relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg flex-1 justify-center transition-colors duration-200',
+                  'relative flex items-center gap-2 px-3 py-2.5 text-sm font-medium rounded-lg flex-shrink-0 flex-1 justify-center transition-colors duration-200 min-w-0',
                   isActive
                     ? 'text-surface-900'
                     : 'text-surface-500 hover:text-surface-700'
@@ -257,8 +302,8 @@ function SettingsPage() {
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                   />
                 )}
-                <span className="relative z-10 flex items-center gap-2">
-                  <TabIcon className="h-4 w-4" />
+                <span className="relative z-10 flex items-center gap-2 whitespace-nowrap">
+                  <TabIcon className="h-4 w-4 shrink-0" />
                   <span className="hidden sm:inline">{tab.label}</span>
                 </span>
               </button>
@@ -279,14 +324,8 @@ function SettingsPage() {
             {activeTab === 'agents' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-surface-900">
-                    Agentes de IA
-                  </h2>
-                  <Button
-                    size="sm"
-                    onClick={openNewAgent}
-                    icon={<Plus className="h-4 w-4" />}
-                  >
+                  <h2 className="text-lg font-semibold text-surface-900">Agentes de IA</h2>
+                  <Button size="sm" onClick={openNewAgent} icon={<Plus className="h-4 w-4" />}>
                     Nuevo Agente
                   </Button>
                 </div>
@@ -308,10 +347,7 @@ function SettingsPage() {
                             <span className="text-sm font-medium text-surface-900 truncate">
                               {agent.name}
                             </span>
-                            <Badge
-                              variant={agent.is_active ? 'success' : 'neutral'}
-                              size="sm"
-                            >
+                            <Badge variant={agent.is_active ? 'success' : 'neutral'} size="sm">
                               {agent.is_active ? 'Activo' : 'Inactivo'}
                             </Badge>
                           </div>
@@ -337,18 +373,14 @@ function SettingsPage() {
                   {agents.length === 0 && (
                     <div className="text-center py-16 text-surface-400">
                       <Bot className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                      <p className="text-sm font-medium">
-                        No hay agentes configurados
-                      </p>
+                      <p className="text-sm font-medium">No hay agentes configurados</p>
                       <p className="text-xs mt-1">
-                        Crea tu primer agente de IA para comenzar a automatizar
-                        tus conversaciones.
+                        Crea tu primer agente de IA para comenzar a automatizar tus conversaciones.
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Agent modal */}
                 <Modal
                   isOpen={showAgentModal}
                   onClose={handleAgentCancel}
@@ -374,6 +406,147 @@ function SettingsPage() {
               />
             )}
 
+            {/* ---- Connector Tab ---- */}
+            {activeTab === 'connector' && (
+              <ChannelAgentConnector
+                assignments={assignments}
+                agents={agents}
+                onUpdateAssignment={handleUpdateAssignment}
+                onDeleteAssignment={handleDeleteAssignment}
+              />
+            )}
+
+            {/* ---- yCloud Tab ---- */}
+            {activeTab === 'ycloud' && (
+              <div className="space-y-6">
+                {/* Header card */}
+                <Card>
+                  <div className="flex items-start gap-4">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 shrink-0">
+                      <Zap className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="text-lg font-semibold text-surface-900">yCloud</h3>
+                        <YCloudStatusBadge connected={isYCloudConnected} />
+                      </div>
+                      <p className="text-sm text-surface-500 mt-1">
+                        Conecta yCloud para enviar y recibir mensajes de WhatsApp Business mediante la API oficial de Meta.
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+
+                {!isManager && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <p className="text-sm text-amber-700">
+                      Solo el gerente puede configurar la integración de yCloud.
+                    </p>
+                  </div>
+                )}
+
+                <Card>
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary-50">
+                      <Key className="h-4 w-4 text-primary-500" />
+                    </div>
+                    <h4 className="text-base font-semibold text-surface-900">Credenciales de API</h4>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* API Key */}
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-surface-700">
+                        API Key de yCloud
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showYCloudKey ? 'text' : 'password'}
+                          disabled={!isManager}
+                          placeholder="ycloud_api_key_..."
+                          value={yCloudApiKey}
+                          onChange={(e) => setYCloudApiKey(e.target.value)}
+                          className="block w-full rounded-lg border border-surface-200 bg-white px-3.5 py-2.5 pr-12 text-sm text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 disabled:bg-surface-50 disabled:cursor-not-allowed"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowYCloudKey((v) => !v)}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-surface-400 hover:text-surface-600 transition-colors"
+                        >
+                          {showYCloudKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-surface-400">
+                        Encuéntrala en el panel de yCloud → Configuración → API.
+                      </p>
+                    </div>
+
+                    {/* Phone Number ID */}
+                    <Input
+                      label="Phone Number ID"
+                      placeholder="1234567890"
+                      value={yCloudPhoneNumberId}
+                      onChange={(e) => setYCloudPhoneNumberId(e.target.value)}
+                      disabled={!isManager}
+                    />
+
+                    {/* Webhook token */}
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-surface-700">
+                        Token de verificación del Webhook
+                      </label>
+                      <Input
+                        placeholder="mi_token_secreto"
+                        value={yCloudWebhookToken}
+                        onChange={(e) => setYCloudWebhookToken(e.target.value)}
+                        disabled={!isManager}
+                      />
+                      <p className="text-xs text-surface-400">
+                        Token personalizado que usarás al configurar el webhook en yCloud.
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Webhook URL info */}
+                <Card>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary-50">
+                      <Globe className="h-4 w-4 text-primary-500" />
+                    </div>
+                    <h4 className="text-base font-semibold text-surface-900">URL del Webhook</h4>
+                  </div>
+                  <p className="text-sm text-surface-500 mb-3">
+                    Configura esta URL en el panel de yCloud para recibir mensajes entrantes:
+                  </p>
+                  <div className="flex items-center gap-2 rounded-lg bg-surface-50 border border-surface-200 px-4 py-3">
+                    <code className="text-xs font-mono text-surface-700 break-all flex-1">
+                      {`${window.location.origin}/api/webhooks/ycloud`}
+                    </code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/ycloud`)}
+                      className="shrink-0 text-xs text-primary-500 hover:text-primary-600 font-medium"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                </Card>
+
+                {isManager && (
+                  <div className="flex justify-end gap-3">
+                    <Button
+                      onClick={handleSaveYCloud}
+                      disabled={!yCloudApiKey || !yCloudPhoneNumberId}
+                      icon={yCloudSaved ? <CheckCircle2 className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+                    >
+                      {yCloudSaved ? '¡Guardado!' : 'Guardar configuración'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ---- General Tab ---- */}
             {activeTab === 'general' && (
               <div className="space-y-6">
@@ -386,9 +559,7 @@ function SettingsPage() {
                       <h3 className="text-lg font-semibold text-surface-900">
                         Información de la Empresa
                       </h3>
-                      <p className="text-sm text-surface-500">
-                        Datos generales de tu negocio
-                      </p>
+                      <p className="text-sm text-surface-500">Datos generales de tu negocio</p>
                     </div>
                   </div>
 
@@ -398,6 +569,7 @@ function SettingsPage() {
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                       icon={Building2}
+                      disabled={!isManager}
                     />
 
                     <div className="w-full space-y-1.5">
@@ -405,14 +577,34 @@ function SettingsPage() {
                         Tipo de negocio
                       </label>
                       <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-lg border border-surface-200 bg-surface-50 text-sm text-surface-600">
-                        {businessType === 'retailer'
-                          ? 'Comercio / Retail'
-                          : 'Servicios'}
+                        {team?.business_type === 'retailer' ? 'Comercio / Retail' : 'Servicios'}
                         <Badge variant="info" size="sm">
                           Configurado en registro
                         </Badge>
                       </div>
                     </div>
+
+                    {team?.invite_code && (
+                      <div className="w-full space-y-1.5">
+                        <label className="block text-sm font-medium text-surface-700">
+                          Código de invitación del equipo
+                        </label>
+                        <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-lg border border-surface-200 bg-surface-50">
+                          <span className="font-mono font-bold text-surface-900 tracking-widest">
+                            {team.invite_code}
+                          </span>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(team.invite_code)}
+                            className="text-xs text-primary-500 hover:text-primary-600 font-medium ml-auto"
+                          >
+                            Copiar
+                          </button>
+                        </div>
+                        <p className="text-xs text-surface-400">
+                          Comparte este código con tu equipo para que se unan.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </Card>
 
@@ -422,12 +614,8 @@ function SettingsPage() {
                       <Globe className="h-5 w-5 text-primary-500" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-surface-900">
-                        Preferencias
-                      </h3>
-                      <p className="text-sm text-surface-500">
-                        Zona horaria y configuración general
-                      </p>
+                      <h3 className="text-lg font-semibold text-surface-900">Preferencias</h3>
+                      <p className="text-sm text-surface-500">Zona horaria y configuración general</p>
                     </div>
                   </div>
 
@@ -455,11 +643,13 @@ function SettingsPage() {
                   </div>
                 </Card>
 
-                <div className="flex justify-end">
-                  <Button icon={<Settings className="h-4 w-4" />}>
-                    Guardar preferencias
-                  </Button>
-                </div>
+                {isManager && (
+                  <div className="flex justify-end">
+                    <Button icon={<Settings className="h-4 w-4" />}>
+                      Guardar preferencias
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </motion.div>

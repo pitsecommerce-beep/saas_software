@@ -51,8 +51,9 @@ interface AuthState {
   /**
    * Stores credentials temporarily without creating a Supabase auth user.
    * The auth user, profile, and team are created together at the end of onboarding.
+   * For vendedor role, the auth user is created immediately so joinTeam can be called right after.
    */
-  register: (email: string, password: string, fullName: string) => Promise<void>;
+  register: (email: string, password: string, fullName: string, role?: 'gerente' | 'vendedor') => Promise<void>;
   clearPendingRegistration: () => void;
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
@@ -151,17 +152,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  register: async (email: string, password: string, fullName: string) => {
+  register: async (email: string, password: string, fullName: string, role: 'gerente' | 'vendedor' = 'gerente') => {
     if (!isSupabaseConfigured) {
       // Mock mode: pre-populate store so the rest of the app works as usual.
       set({
         user: { id: mockProfile.id, email } as User,
-        profile: { ...mockProfile, email, full_name: fullName, team_id: undefined },
+        profile: { ...mockProfile, email, full_name: fullName, role, team_id: undefined },
         team: null,
       });
       return;
     }
-    // Defer Supabase auth user creation until the end of onboarding.
+
+    if (role === 'vendedor') {
+      // For agents, create the auth user immediately so joinTeam can follow right after.
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } },
+      });
+      if (signUpError) throw signUpError;
+      if (!data.user) throw new Error('No se pudo crear el usuario');
+
+      // Insert profile with role=vendedor but no team yet
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: data.user.id,
+        email,
+        full_name: fullName,
+        role: 'vendedor',
+        is_active: true,
+      });
+      if (profileError) throw profileError;
+
+      set({ user: data.user, profile: { id: data.user.id, email, full_name: fullName, role: 'vendedor', is_active: true, created_at: new Date().toISOString() } });
+      return;
+    }
+
+    // Gerente: defer Supabase auth user creation until the end of onboarding.
     // This prevents orphaned auth users when onboarding is abandoned or fails.
     set({ pendingRegistration: { email, password, fullName } });
   },
@@ -246,15 +272,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   joinTeam: async (inviteCode: string) => {
     set({ loading: true });
     try {
+      if (!isSupabaseConfigured) {
+        // Mock mode: simulate joining
+        set({ team: { ...mockTeam, invite_code: inviteCode }, profile: { ...mockProfile, team_id: mockTeam.id }, loading: false });
+        return;
+      }
+
       const { data: team, error: teamError } = await supabase
         .from('teams')
         .select('*')
         .eq('invite_code', inviteCode)
         .single();
-      if (teamError) throw teamError;
+      if (teamError) throw new Error('Código de invitación inválido');
 
       const { user } = get();
-      if (!user) throw new Error('User not authenticated');
+      if (!user) throw new Error('Usuario no autenticado');
 
       const { error: updateError } = await supabase
         .from('profiles')
