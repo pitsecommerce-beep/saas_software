@@ -102,10 +102,22 @@ import TeamPage from '@/pages/TeamPage';
 import SettingsPage from '@/pages/SettingsPage';
 import AuthCallbackPage from '@/pages/AuthCallbackPage';
 
+/**
+ * Wraps protected routes. Redirects to /login if not authenticated,
+ * or to /onboarding if the profile has no team yet.
+ * When profile fetch failed (server error) we redirect to /login
+ * instead of onboarding to avoid a confusing loop.
+ */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, profile } = useAuthStore();
+  const { user, profile, profileFetchFailed } = useAuthStore();
 
   if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // If profile fetch failed due to server error (e.g. RLS infinite recursion),
+  // send to login with a clean slate rather than onboarding.
+  if (profileFetchFailed) {
     return <Navigate to="/login" replace />;
   }
 
@@ -113,6 +125,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // without a DB trigger) or when the profile exists but has no team assigned.
   if (!profile || !profile.team_id) {
     return <Navigate to="/onboarding" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+/**
+ * Wraps public routes (login, register). Redirects authenticated users
+ * with a complete profile to the dashboard instead of showing auth forms.
+ */
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { user, profile, profileFetchFailed } = useAuthStore();
+
+  // If user is fully set up (has user + profile + team), send to dashboard.
+  if (user && profile?.team_id && !profileFetchFailed) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
@@ -133,10 +160,12 @@ function App() {
     <BrowserRouter basename={import.meta.env.VITE_BASE_PATH ?? '/saas_software'}>
       <AnimatePresence mode="wait">
         <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+          {/* Public routes — redirect to dashboard if already authenticated */}
+          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+          <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+          {/* Onboarding — accessible to users setting up their team */}
           <Route path="/onboarding" element={<OnboardingPage />} />
+          {/* OAuth callback — always accessible */}
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           {/* Protected routes */}
           <Route
