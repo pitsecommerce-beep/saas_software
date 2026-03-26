@@ -270,9 +270,21 @@ ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view own profile" ON profiles
   FOR SELECT USING (auth.uid() = id);
 
+-- NOTE: This policy uses a SECURITY DEFINER helper to avoid infinite recursion.
+-- A direct sub-SELECT on `profiles` inside a profiles policy causes Postgres to
+-- re-evaluate the same RLS policy, leading to infinite recursion.
+CREATE OR REPLACE FUNCTION get_my_team_id()
+RETURNS UUID
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT team_id FROM profiles WHERE id = auth.uid() LIMIT 1;
+$$;
+
 CREATE POLICY "Users can view team members" ON profiles
   FOR SELECT USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Users can update own profile" ON profiles
@@ -281,7 +293,7 @@ CREATE POLICY "Users can update own profile" ON profiles
 -- Teams: members can view their team
 CREATE POLICY "Team members can view team" ON teams
   FOR SELECT USING (
-    id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    id = get_my_team_id()
   );
 
 CREATE POLICY "Owner can update team" ON teams
@@ -500,4 +512,15 @@ SECURITY DEFINER
 STABLE
 AS $$
   SELECT * FROM teams WHERE invite_code = p_invite_code LIMIT 1;
+$$;
+
+-- Check if an email already has a registered account.
+-- Uses SECURITY DEFINER so unauthenticated users can call it during registration.
+CREATE OR REPLACE FUNCTION check_email_exists(p_email TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (SELECT 1 FROM auth.users WHERE email = p_email);
 $$;

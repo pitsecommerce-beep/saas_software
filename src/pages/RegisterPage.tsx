@@ -67,9 +67,13 @@ export default function RegisterPage() {
         navigate('/dashboard');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '';
-        setError(msg.includes('invitación') || msg.includes('invite') || msg.includes('Código')
-          ? 'Código de equipo inválido. Verifica con tu gerente.'
-          : 'Error al crear la cuenta. Inténtalo de nuevo.');
+        if (msg.includes('Ya existe')) {
+          setError(msg);
+        } else if (msg.includes('invitación') || msg.includes('invite') || msg.includes('Código')) {
+          setError('Código de equipo inválido. Verifica con tu gerente.');
+        } else {
+          setError('Error al crear la cuenta. Inténtalo de nuevo.');
+        }
       } finally {
         setJoiningLoading(false);
       }
@@ -77,8 +81,9 @@ export default function RegisterPage() {
       try {
         await register(email, password, fullName, 'gerente');
         navigate('/onboarding');
-      } catch {
-        setError('Error al crear la cuenta. Inténtalo de nuevo.');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '';
+        setError(msg.includes('Ya existe') ? msg : 'Error al crear la cuenta. Inténtalo de nuevo.');
       }
     }
   };

@@ -139,8 +139,19 @@ export default function OnboardingPage() {
           password: pendingRegistration.password,
           options: { data: { full_name: pendingRegistration.fullName } },
         });
-        if (signUpError) throw signUpError;
+        if (signUpError) {
+          if (signUpError.message?.toLowerCase().includes('already registered') ||
+              signUpError.message?.toLowerCase().includes('already exists')) {
+            throw new Error('DUPLICATE_EMAIL');
+          }
+          throw signUpError;
+        }
         if (!data.user) throw new Error('No se pudo crear el usuario de autenticación');
+
+        // Supabase with email confirmation enabled returns a fake user with empty identities
+        if (data.user.identities && data.user.identities.length === 0) {
+          throw new Error('DUPLICATE_EMAIL');
+        }
 
         ownerId = data.user.id;
         ownerEmail = pendingRegistration.email;
@@ -200,12 +211,18 @@ export default function OnboardingPage() {
       success = true;
     } catch (err) {
       console.error('Error creating team:', err);
-      // If we created the auth user in this attempt but subsequent steps failed,
-      // sign out to avoid leaving an orphaned auth user with no team.
-      if (authCreatedHere) {
-        await supabase.auth.signOut();
+      const errMsg = err instanceof Error ? err.message : '';
+      if (errMsg === 'DUPLICATE_EMAIL') {
+        clearPendingRegistration();
+        setCreateError('Ya existe una cuenta con este correo electrónico. Por favor, inicia sesión.');
+      } else {
+        // If we created the auth user in this attempt but subsequent steps failed,
+        // sign out to avoid leaving an orphaned auth user with no team.
+        if (authCreatedHere) {
+          await supabase.auth.signOut();
+        }
+        setCreateError('Error al crear el equipo. Inténtalo de nuevo.');
       }
-      setCreateError('Error al crear el equipo. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
       // Only advance to the confirmation step on success.
