@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
+import { useDemoStore } from '@/stores/demoStore';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
@@ -16,6 +17,7 @@ const pageTitles: Record<string, string> = {
 export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { profile, logout } = useAuthStore();
+  const { isDemoMode } = useDemoStore();
   const location = useLocation();
 
   const title = pageTitles[location.pathname] ?? 'Dashboard';
@@ -39,7 +41,7 @@ export function MainLayout() {
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
             <AnimatePresence mode="wait">
               <motion.div
-                key={location.pathname}
+                key={`${location.pathname}-${isDemoMode}`}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { Profile, TeamInvitation, UserRole } from '@/types';
 import { motion } from 'framer-motion';
 import { Users, ShieldCheck, ShoppingCart, Truck, Clock, CheckCircle2, XCircle } from 'lucide-react';
@@ -121,21 +121,15 @@ export default function TeamPage() {
   const { isDemoMode } = useDemoStore();
   const { profile, team } = useAuthStore();
 
-  const [members, setMembers] = useState<Profile[]>([]);
-  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
-  const [inviteCode, setInviteCode] = useState('');
-
-  useEffect(() => {
-    if (isDemoMode) {
-      setMembers(mockMembers);
-      setInvitations(mockInvitations);
-      setInviteCode('EQUIPO-A7X9K2');
-    } else {
-      setMembers(profile ? [profile] : []);
-      setInvitations([]);
-      setInviteCode(team?.invite_code ?? '');
-    }
-  }, [isDemoMode, profile, team]);
+  const [members, setMembers] = useState<Profile[]>(
+    isDemoMode ? mockMembers : (profile ? [profile] : [])
+  );
+  const [invitations, setInvitations] = useState<TeamInvitation[]>(
+    isDemoMode ? mockInvitations : []
+  );
+  const [inviteCode, setInviteCode] = useState(
+    isDemoMode ? 'EQUIPO-A7X9K2' : (team?.invite_code ?? '')
+  );
 
   const currentUserRole: UserRole = profile?.role ?? 'gerente';
 

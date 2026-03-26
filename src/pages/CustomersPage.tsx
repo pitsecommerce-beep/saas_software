@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { Customer, ChannelType } from '@/types';
 import { motion } from 'framer-motion';
 import { UserPlus, FileSpreadsheet } from 'lucide-react';
@@ -118,11 +118,7 @@ const initialCustomers: Customer[] = [
 
 export default function CustomersPage() {
   const { isDemoMode } = useDemoStore();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-
-  useEffect(() => {
-    setCustomers(isDemoMode ? initialCustomers : []);
-  }, [isDemoMode]);
+  const [customers, setCustomers] = useState<Customer[]>(isDemoMode ? initialCustomers : []);
   const [searchQuery, setSearchQuery] = useState('');
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
