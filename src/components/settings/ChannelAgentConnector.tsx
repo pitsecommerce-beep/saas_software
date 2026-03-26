@@ -202,9 +202,13 @@ export function ChannelAgentConnector({
   }, [assignments, selectedChannelId, hoveredAgentId]);
 
   useEffect(() => {
-    recalcCables();
+    // Use rAF to avoid synchronous setState inside the effect body (eslint react-hooks/set-state-in-effect)
+    const id = requestAnimationFrame(recalcCables);
     window.addEventListener('resize', recalcCables);
-    return () => window.removeEventListener('resize', recalcCables);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener('resize', recalcCables);
+    };
   }, [recalcCables]);
 
   // Recalc on layout shift (small delay for framer-motion animations)
