@@ -43,6 +43,8 @@ interface AuthState {
   profile: Profile | null;
   team: Team | null;
   loading: boolean;
+  /** True when fetchProfile hit a server error (e.g. RLS 500) vs "no rows found". */
+  profileFetchFailed: boolean;
   /** Credentials stored during registration, consumed atomically at end of onboarding. */
   pendingRegistration: PendingRegistration | null;
   initialize: () => void;
@@ -64,8 +66,8 @@ interface AuthState {
 // If Supabase is not configured, pre-populate the store with mock data so
 // the app never renders in a loading state waiting for async initialization.
 const initialState = isSupabaseConfigured
-  ? { user: null as User | null, profile: null as Profile | null, team: null as Team | null, loading: true, pendingRegistration: null as PendingRegistration | null }
-  : { user: { id: mockProfile.id, email: mockProfile.email } as User, profile: mockProfile, team: mockTeam, loading: false, pendingRegistration: null as PendingRegistration | null };
+  ? { user: null as User | null, profile: null as Profile | null, team: null as Team | null, loading: true, profileFetchFailed: false, pendingRegistration: null as PendingRegistration | null }
+  : { user: { id: mockProfile.id, email: mockProfile.email } as User, profile: mockProfile, team: mockTeam, loading: false, profileFetchFailed: false, pendingRegistration: null as PendingRegistration | null };
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   ...initialState,
@@ -77,15 +79,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if ((useAuthStore as unknown as { _initialized?: boolean })._initialized) return;
     (useAuthStore as unknown as { _initialized?: boolean })._initialized = true;
 
-    // Safety net: force exit loading after 6 seconds to avoid infinite loading screen.
-    // This timeout is NOT cleared early — it always fires if loading is still true,
-    // covering cases where fetchProfile/fetchTeam hang after the auth event fires.
+    // Safety net: force exit loading after 8 seconds to avoid infinite loading screen.
     const safetyTimeout = setTimeout(() => {
       if (get().loading) {
         console.warn('Auth initialization timed out — redirecting to login');
-        set({ user: null, profile: null, team: null, loading: false });
+        set({ user: null, profile: null, team: null, loading: false, profileFetchFailed: false });
       }
-    }, 6000);
+    }, 8000);
 
     supabase.auth.onAuthStateChange(async (event, session) => {
       try {
@@ -107,14 +107,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               await withTimeout(get().fetchTeam());
             } catch (fetchErr) {
               console.warn('Profile/team fetch timed out or failed:', fetchErr);
+              // Mark as fetch failure so ProtectedRoute doesn't wrongly
+              // redirect to onboarding when the real problem is a server error.
+              set({ profileFetchFailed: true });
             }
           }
         } else {
-          set({ user: null, profile: null, team: null });
+          set({ user: null, profile: null, team: null, profileFetchFailed: false });
         }
       } catch (err) {
         console.error('Auth state change error:', err);
-        set({ user: null, profile: null, team: null });
+        set({ user: null, profile: null, team: null, profileFetchFailed: false });
       } finally {
         clearTimeout(safetyTimeout);
         set({ loading: false });
@@ -128,10 +131,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     set({ loading: true });
     try {
+      // Build the callback URL so the browser returns to /auth/callback
+      // after completing the OAuth flow with Google.
+      const basePath = (import.meta.env.VITE_BASE_PATH ?? '/saas_software/').replace(/\/$/, '');
+      const callbackUrl = `${window.location.origin}${basePath}/auth/callback`;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+          redirectTo: callbackUrl,
         },
       });
       if (error) throw error;
@@ -142,7 +150,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (email: string, password: string) => {
-    set({ loading: true });
+    set({ loading: true, profileFetchFailed: false });
     if (!isSupabaseConfigured) {
       set({
         user: { id: mockProfile.id, email } as User,
@@ -208,15 +216,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw new Error('Ya existe una cuenta con este correo electrónico. Inicia sesión.');
       }
 
-      // Insert profile with role=vendedor but no team yet
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: data.user.id,
-        email,
-        full_name: fullName,
-        role: 'vendedor',
-        is_active: true,
-      });
-      if (profileError) throw profileError;
+      // The DB trigger handle_new_user() already creates a profile row.
+      // Wait briefly for it to complete, then update the role.
+      await new Promise((r) => setTimeout(r, 500));
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ role: 'vendedor' })
+        .eq('id', data.user.id);
+      if (profileError) {
+        console.warn('Could not update vendedor role, trigger may not have fired:', profileError.message);
+      }
 
       set({ user: data.user, profile: { id: data.user.id, email, full_name: fullName, role: 'vendedor', is_active: true, created_at: new Date().toISOString() } });
       return;
@@ -233,7 +243,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // Clear auth state immediately so the UI redirects to /login without delay.
     // Never set loading: true here — that would show the fullscreen spinner and
     // could block navigation if signOut is slow or throws.
-    set({ user: null, profile: null, team: null, pendingRegistration: null });
+    set({ user: null, profile: null, team: null, pendingRegistration: null, profileFetchFailed: false });
     try {
       if (isSupabaseConfigured) {
         await supabase.auth.signOut();
@@ -262,16 +272,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (error) {
         // PGRST116 = no rows found — user has no profile yet (no DB trigger).
-        // Any other error is also treated as "no profile" so the user reaches onboarding.
-        console.warn('fetchProfile:', error.message);
-        set({ profile: null });
+        if (error.code === 'PGRST116') {
+          console.warn('fetchProfile: no profile row found');
+          set({ profile: null, profileFetchFailed: false });
+          return;
+        }
+        // Any other error (500, RLS recursion, etc.) is a server failure.
+        console.error('fetchProfile server error:', error.message);
+        set({ profile: null, profileFetchFailed: true });
         return;
       }
 
-      set({ profile: data as Profile });
+      set({ profile: data as Profile, profileFetchFailed: false });
     } catch (err) {
       console.error('fetchProfile unexpected error:', err);
-      set({ profile: null });
+      set({ profile: null, profileFetchFailed: true });
     }
   },
 

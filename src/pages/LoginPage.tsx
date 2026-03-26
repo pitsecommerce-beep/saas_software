@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -10,12 +10,24 @@ import { useAuthStore } from '@/stores/authStore';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, loginWithGoogle, loading } = useAuthStore();
+  const { login, loginWithGoogle, loading, profileFetchFailed, logout } = useAuthStore();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() =>
+    profileFetchFailed
+      ? 'Hubo un error al cargar tu perfil. Por favor, intenta iniciar sesión de nuevo.'
+      : ''
+  );
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  // If we arrived here due to a profile fetch failure, clear the broken session
+  // so the user can start fresh.
+  useEffect(() => {
+    if (profileFetchFailed) {
+      logout();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGoogleLogin = async () => {
     setError('');

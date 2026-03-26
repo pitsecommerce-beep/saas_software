@@ -16,25 +16,52 @@ export default function AuthCallbackPage() {
 
     const handleCallback = async () => {
       try {
+        // Supabase exchanges the OAuth code in the URL hash for a session
+        // automatically. getSession() returns the resulting session.
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (error || !session) {
+          console.warn('AuthCallback: no session found, redirecting to login');
           navigate('/login', { replace: true });
           return;
         }
 
-        const { fetchProfile, fetchTeam } = useAuthStore.getState();
-        await fetchProfile();
-        await fetchTeam();
+        // Populate the auth store with the user from the session.
+        const store = useAuthStore.getState();
+        useAuthStore.setState({ user: session.user, profileFetchFailed: false });
 
-        const profile = useAuthStore.getState().profile;
+        // Fetch profile — the DB trigger handle_new_user() may have already
+        // created it. Retry once after a short delay if it fails (trigger
+        // may not have completed yet).
+        await store.fetchProfile();
+        let profile = useAuthStore.getState().profile;
+
+        if (!profile && !useAuthStore.getState().profileFetchFailed) {
+          // Profile doesn't exist yet — the trigger may be delayed.
+          // Wait 1s and retry.
+          await new Promise((r) => setTimeout(r, 1000));
+          await store.fetchProfile();
+          profile = useAuthStore.getState().profile;
+        }
+
+        // If profile fetch failed due to server error, go to login
+        // so the user can retry instead of being stuck in onboarding.
+        if (useAuthStore.getState().profileFetchFailed) {
+          console.warn('AuthCallback: profile fetch failed (server error), redirecting to login');
+          navigate('/login', { replace: true });
+          return;
+        }
 
         if (profile?.team_id) {
+          // Profile exists and has a team — fetch team data and go to dashboard.
+          await store.fetchTeam();
           navigate('/dashboard', { replace: true });
         } else {
+          // Profile exists but no team (or no profile at all) — onboarding.
           navigate('/onboarding', { replace: true });
         }
-      } catch {
+      } catch (err) {
+        console.error('AuthCallback error:', err);
         navigate('/login', { replace: true });
       }
     };

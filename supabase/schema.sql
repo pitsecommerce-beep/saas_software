@@ -266,13 +266,13 @@ ALTER TABLE warehouses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
 
--- Profiles: users can read their own profile and team members
-CREATE POLICY "Users can view own profile" ON profiles
-  FOR SELECT USING (auth.uid() = id);
-
--- NOTE: This policy uses a SECURITY DEFINER helper to avoid infinite recursion.
--- A direct sub-SELECT on `profiles` inside a profiles policy causes Postgres to
--- re-evaluate the same RLS policy, leading to infinite recursion.
+-- ============================================
+-- HELPER: get_my_team_id()
+-- ============================================
+-- SECURITY DEFINER bypasses RLS so this function can safely read the
+-- profiles table without triggering the profiles RLS policies again.
+-- This prevents infinite recursion when profiles or other tables need
+-- to check the caller's team_id.
 CREATE OR REPLACE FUNCTION get_my_team_id()
 RETURNS UUID
 LANGUAGE sql
@@ -282,15 +282,47 @@ AS $$
   SELECT team_id FROM profiles WHERE id = auth.uid() LIMIT 1;
 $$;
 
+-- ============================================
+-- HELPER: get_my_role()
+-- ============================================
+-- Same pattern as get_my_team_id() — avoids recursion when checking role.
+CREATE OR REPLACE FUNCTION get_my_role()
+RETURNS TEXT
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT role FROM profiles WHERE id = auth.uid() LIMIT 1;
+$$;
+
+-- ============================================
+-- PROFILES POLICIES
+-- ============================================
+
+-- Users can view their own profile
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
+
+-- Users can view profiles of team members (uses helper to avoid recursion)
 CREATE POLICY "Users can view team members" ON profiles
   FOR SELECT USING (
-    team_id = get_my_team_id()
+    team_id IS NOT NULL AND team_id = get_my_team_id()
   );
 
+-- Users can update their own profile
 CREATE POLICY "Users can update own profile" ON profiles
   FOR UPDATE USING (auth.uid() = id);
 
--- Teams: members can view their team
+-- Authenticated users can insert their own profile row
+-- (needed for client-side upsert during onboarding)
+CREATE POLICY "Users can insert own profile" ON profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- ============================================
+-- TEAMS POLICIES
+-- ============================================
+
+-- Team members can view their team (uses helper to avoid recursion)
 CREATE POLICY "Team members can view team" ON teams
   FOR SELECT USING (
     id = get_my_team_id()
@@ -302,132 +334,212 @@ CREATE POLICY "Owner can update team" ON teams
 CREATE POLICY "Authenticated users can create teams" ON teams
   FOR INSERT WITH CHECK (auth.uid() = owner_id);
 
--- Customers: team members can manage customers
+-- ============================================
+-- CUSTOMERS POLICIES (use get_my_team_id() to avoid recursion)
+-- ============================================
+
 CREATE POLICY "Team members can view customers" ON customers
   FOR SELECT USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Team members can insert customers" ON customers
   FOR INSERT WITH CHECK (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Team members can update customers" ON customers
   FOR UPDATE USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Gerente can delete customers" ON customers
   FOR DELETE USING (
-    team_id IN (
-      SELECT team_id FROM profiles
-      WHERE id = auth.uid() AND role = 'gerente'
-    )
+    team_id = get_my_team_id() AND get_my_role() = 'gerente'
   );
 
--- Conversations: team access with vendor assignment filtering
+-- ============================================
+-- CONVERSATIONS POLICIES (use get_my_team_id() to avoid recursion)
+-- ============================================
+
 CREATE POLICY "Team members can view conversations" ON conversations
   FOR SELECT USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Team members can manage conversations" ON conversations
   FOR ALL USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
--- Messages: accessible through conversation access
+-- ============================================
+-- MESSAGES POLICIES (use get_my_team_id() to avoid recursion)
+-- ============================================
+
 CREATE POLICY "Users can view messages" ON messages
   FOR SELECT USING (
     conversation_id IN (
-      SELECT id FROM conversations
-      WHERE team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+      SELECT id FROM conversations WHERE team_id = get_my_team_id()
     )
   );
 
 CREATE POLICY "Users can insert messages" ON messages
   FOR INSERT WITH CHECK (
     conversation_id IN (
-      SELECT id FROM conversations
-      WHERE team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+      SELECT id FROM conversations WHERE team_id = get_my_team_id()
     )
   );
 
--- AI Agents: gerente manages, team can view
+-- ============================================
+-- AI AGENTS POLICIES (use helpers to avoid recursion)
+-- ============================================
+
 CREATE POLICY "Team can view agents" ON ai_agents
   FOR SELECT USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Gerente can manage agents" ON ai_agents
   FOR ALL USING (
-    team_id IN (
-      SELECT team_id FROM profiles
-      WHERE id = auth.uid() AND role = 'gerente'
-    )
+    team_id = get_my_team_id() AND get_my_role() = 'gerente'
   );
 
--- Channel assignments: same as agents
+-- ============================================
+-- CHANNEL ASSIGNMENTS POLICIES
+-- ============================================
+
 CREATE POLICY "Team can view assignments" ON channel_assignments
   FOR SELECT USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Gerente can manage assignments" ON channel_assignments
   FOR ALL USING (
-    team_id IN (
-      SELECT team_id FROM profiles
-      WHERE id = auth.uid() AND role = 'gerente'
-    )
+    team_id = get_my_team_id() AND get_my_role() = 'gerente'
   );
 
--- Knowledge bases: team access
+-- ============================================
+-- KNOWLEDGE BASES POLICIES
+-- ============================================
+
 CREATE POLICY "Team can view knowledge bases" ON knowledge_bases
   FOR SELECT USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Gerente can manage knowledge bases" ON knowledge_bases
   FOR ALL USING (
-    team_id IN (
-      SELECT team_id FROM profiles
-      WHERE id = auth.uid() AND role = 'gerente'
-    )
+    team_id = get_my_team_id() AND get_my_role() = 'gerente'
   );
 
--- Knowledge columns: through knowledge base access
+-- ============================================
+-- KNOWLEDGE COLUMNS POLICIES
+-- ============================================
+
 CREATE POLICY "Users can view knowledge columns" ON knowledge_columns
   FOR SELECT USING (
     knowledge_base_id IN (
-      SELECT id FROM knowledge_bases
-      WHERE team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+      SELECT id FROM knowledge_bases WHERE team_id = get_my_team_id()
     )
   );
 
 CREATE POLICY "Gerente can manage knowledge columns" ON knowledge_columns
   FOR ALL USING (
     knowledge_base_id IN (
-      SELECT id FROM knowledge_bases
-      WHERE team_id IN (
-        SELECT team_id FROM profiles
-        WHERE id = auth.uid() AND role = 'gerente'
-      )
+      SELECT id FROM knowledge_bases WHERE team_id = get_my_team_id()
     )
   );
 
--- Team invitations
+-- ============================================
+-- TEAM INVITATIONS POLICIES
+-- ============================================
+
 CREATE POLICY "Team can view invitations" ON team_invitations
   FOR SELECT USING (
-    team_id IN (SELECT team_id FROM profiles WHERE id = auth.uid())
+    team_id = get_my_team_id()
   );
 
 CREATE POLICY "Gerente can manage invitations" ON team_invitations
   FOR ALL USING (
-    team_id IN (
-      SELECT team_id FROM profiles
-      WHERE id = auth.uid() AND role = 'gerente'
-    )
+    team_id = get_my_team_id() AND get_my_role() = 'gerente'
+  );
+
+-- ============================================
+-- ORDERS POLICIES
+-- ============================================
+
+CREATE POLICY "Team members can view orders" ON orders
+  FOR SELECT USING (team_id = get_my_team_id());
+
+CREATE POLICY "Team members can manage orders" ON orders
+  FOR ALL USING (team_id = get_my_team_id());
+
+-- ============================================
+-- VEHICLES POLICIES
+-- ============================================
+
+CREATE POLICY "Team members can view vehicles" ON vehicles
+  FOR SELECT USING (team_id = get_my_team_id());
+
+CREATE POLICY "Gerente can manage vehicles" ON vehicles
+  FOR ALL USING (team_id = get_my_team_id() AND get_my_role() = 'gerente');
+
+-- ============================================
+-- DELIVERY ROUTES POLICIES
+-- ============================================
+
+CREATE POLICY "Team members can view routes" ON delivery_routes
+  FOR SELECT USING (team_id = get_my_team_id());
+
+CREATE POLICY "Team members can manage routes" ON delivery_routes
+  FOR ALL USING (team_id = get_my_team_id());
+
+-- ============================================
+-- ROUTE STOPS POLICIES
+-- ============================================
+
+CREATE POLICY "Team members can view stops" ON route_stops
+  FOR SELECT USING (
+    route_id IN (SELECT id FROM delivery_routes WHERE team_id = get_my_team_id())
+  );
+
+CREATE POLICY "Team members can manage stops" ON route_stops
+  FOR ALL USING (
+    route_id IN (SELECT id FROM delivery_routes WHERE team_id = get_my_team_id())
+  );
+
+-- ============================================
+-- WAREHOUSES POLICIES
+-- ============================================
+
+CREATE POLICY "Team members can view warehouses" ON warehouses
+  FOR SELECT USING (team_id = get_my_team_id());
+
+CREATE POLICY "Gerente can manage warehouses" ON warehouses
+  FOR ALL USING (team_id = get_my_team_id() AND get_my_role() = 'gerente');
+
+-- ============================================
+-- PRODUCTS POLICIES
+-- ============================================
+
+CREATE POLICY "Team members can view products" ON products
+  FOR SELECT USING (team_id = get_my_team_id());
+
+CREATE POLICY "Gerente can manage products" ON products
+  FOR ALL USING (team_id = get_my_team_id() AND get_my_role() = 'gerente');
+
+-- ============================================
+-- INVENTORY POLICIES
+-- ============================================
+
+CREATE POLICY "Team members can view inventory" ON inventory
+  FOR SELECT USING (
+    warehouse_id IN (SELECT id FROM warehouses WHERE team_id = get_my_team_id())
+  );
+
+CREATE POLICY "Team members can manage inventory" ON inventory
+  FOR ALL USING (
+    warehouse_id IN (SELECT id FROM warehouses WHERE team_id = get_my_team_id())
   );
 
 -- ============================================

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import type { FormEvent, DragEvent, ChangeEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShoppingBag,
@@ -40,6 +40,28 @@ const slideVariants = {
 };
 
 export default function OnboardingPage() {
+  const navigate = useNavigate();
+  const { user, profile, pendingRegistration, clearPendingRegistration, fetchProfile, fetchTeam } = useAuthStore();
+
+  // Auth guard: only allow access if user has a pending registration (gerente flow)
+  // OR is authenticated (Google OAuth / existing user without team).
+  // If neither, redirect to register.
+  const hasAccess = pendingRegistration || user;
+
+  // If user already has a profile with a team, redirect to dashboard.
+  if (profile?.team_id) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // If no pending registration AND no authenticated user, redirect to register.
+  if (!hasAccess) {
+    return <Navigate to="/register" replace />;
+  }
+
+  return <OnboardingWizard />;
+}
+
+function OnboardingWizard() {
   const navigate = useNavigate();
   const { user, profile, pendingRegistration, clearPendingRegistration, fetchProfile, fetchTeam } = useAuthStore();
 
@@ -157,6 +179,12 @@ export default function OnboardingPage() {
         ownerEmail = pendingRegistration.email;
         ownerFullName = pendingRegistration.fullName;
         authCreatedHere = true;
+
+        // Update the store with the newly created user
+        useAuthStore.setState({ user: data.user });
+
+        // Wait briefly for the DB trigger handle_new_user() to create the profile row.
+        await new Promise((r) => setTimeout(r, 500));
       }
 
       // Last resort: query Supabase auth directly in case the store hasn't
@@ -164,6 +192,11 @@ export default function OnboardingPage() {
       if (!ownerId) {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         ownerId = authUser?.id;
+        if (authUser) {
+          ownerEmail = ownerEmail || authUser.email || '';
+          ownerFullName = ownerFullName || (authUser.user_metadata?.full_name as string) || '';
+          useAuthStore.setState({ user: authUser });
+        }
       }
 
       if (!ownerId) throw new Error('Usuario no autenticado');
@@ -189,19 +222,31 @@ export default function OnboardingPage() {
         await supabase.storage.from('logos').upload(path, logoFile, { upsert: true });
       }
 
-      // Upsert the profile row with team_id in a single operation:
-      //   - If the DB trigger already created it → updates team_id.
-      //   - If no trigger → inserts it now.
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: ownerId,
-        email: ownerEmail,
-        full_name: ownerFullName,
-        role: 'gerente',
-        is_active: true,
-        team_id: teamData.id,
-      });
+      // Update the profile row with team_id and role=gerente.
+      // The DB trigger handle_new_user() should have already created the row.
+      // Try UPDATE first (preferred), fall back to UPSERT if needed.
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          role: 'gerente',
+          team_id: teamData.id,
+          full_name: ownerFullName || ownerEmail,
+        })
+        .eq('id', ownerId);
 
-      if (profileError) throw profileError;
+      if (updateError) {
+        // If UPDATE fails (e.g. no row to update), try UPSERT as fallback
+        console.warn('Profile update failed, trying upsert:', updateError.message);
+        const { error: upsertError } = await supabase.from('profiles').upsert({
+          id: ownerId,
+          email: ownerEmail,
+          full_name: ownerFullName || ownerEmail,
+          role: 'gerente',
+          is_active: true,
+          team_id: teamData.id,
+        });
+        if (upsertError) throw upsertError;
+      }
 
       clearPendingRegistration();
 
@@ -220,6 +265,7 @@ export default function OnboardingPage() {
         // sign out to avoid leaving an orphaned auth user with no team.
         if (authCreatedHere) {
           await supabase.auth.signOut();
+          useAuthStore.setState({ user: null });
         }
         setCreateError('Error al crear el equipo. Inténtalo de nuevo.');
       }
@@ -250,6 +296,16 @@ export default function OnboardingPage() {
 
   const handleFinish = () => {
     navigate('/dashboard');
+  };
+
+  const handleGoBack = () => {
+    if (pendingRegistration) {
+      // Gerente registration flow: go back to register
+      navigate('/register');
+    } else {
+      // Google OAuth flow: go back to login
+      navigate('/login');
+    }
   };
 
   return (
@@ -445,7 +501,7 @@ export default function OnboardingPage() {
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => navigate('/register')}
+                    onClick={handleGoBack}
                     icon={<ArrowLeft className="h-4 w-4" />}
                   >
                     Atrás
