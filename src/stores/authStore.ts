@@ -91,7 +91,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       try {
         if (session?.user) {
           set({ user: session.user });
-          if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+
+          // Skip profile/team fetching when the OAuth callback page is
+          // handling the flow — it manages profile creation/role updates
+          // and will navigate when ready.  Running fetches here in parallel
+          // causes duplicate requests and 406 race-condition errors.
+          const isOAuthCallback = window.location.pathname.includes('/auth/callback');
+
+          if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !isOAuthCallback) {
             // Wrap fetches in a race against a per-operation timeout so a
             // hanging request doesn't block the app forever.
             const withTimeout = <T>(p: Promise<T>, ms = 5000): Promise<T> =>
