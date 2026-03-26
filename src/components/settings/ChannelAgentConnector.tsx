@@ -45,7 +45,6 @@ export function ChannelAgentConnector({
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
 
   const selectedAssignment = assignments.find((a) => a.id === selectedChannelId);
-  const pendingAgentId = hoveredAgentId ?? selectedAssignment?.agent_id ?? null;
 
   const handleChannelClick = (id: string) => {
     setSelectedChannelId((prev) => (prev === id ? null : id));
