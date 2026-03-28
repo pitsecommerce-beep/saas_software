@@ -56,7 +56,11 @@ export default function OnboardingPage() {
   }
 
   // Vendedores should NOT create teams — show a join-team form instead.
-  if (profile?.role === 'vendedor') {
+  // However, Google OAuth users arriving without a team should always see the
+  // manager wizard (AuthCallbackPage already sets their role to 'gerente',
+  // but guard against race conditions where the profile hasn't been updated yet).
+  const isGoogleOAuthUser = !pendingRegistration && user;
+  if (profile?.role === 'vendedor' && !isGoogleOAuthUser) {
     return <VendedorJoinTeam />;
   }
 

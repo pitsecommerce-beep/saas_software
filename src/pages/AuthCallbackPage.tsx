@@ -57,7 +57,54 @@ export default function AuthCallbackPage() {
           await store.fetchTeam();
           navigate('/dashboard', { replace: true });
         } else {
-          // Profile exists but no team (or no profile at all) — onboarding.
+          // New Google OAuth user without a team needs to go through gerente
+          // onboarding. The DB trigger defaults role to 'vendedor', but Google
+          // registration is only available for gerentes (the button is hidden
+          // for vendedores). Fix the role so OnboardingPage shows the correct
+          // wizard instead of the join-team form.
+          if (profile && profile.role !== 'gerente') {
+            const { error: updateErr } = await supabase
+              .from('profiles')
+              .update({ role: 'gerente' })
+              .eq('id', profile.id);
+            if (!updateErr) {
+              useAuthStore.setState({
+                profile: { ...profile, role: 'gerente' },
+              });
+            }
+          } else if (!profile) {
+            // Profile still doesn't exist — create it manually as gerente.
+            const userId = session.user.id;
+            const email = session.user.email ?? '';
+            const fullName =
+              (session.user.user_metadata?.full_name as string) ??
+              (session.user.user_metadata?.name as string) ??
+              email;
+            const avatarUrl =
+              (session.user.user_metadata?.avatar_url as string) ?? null;
+
+            const { error: insertErr } = await supabase.from('profiles').insert({
+              id: userId,
+              email,
+              full_name: fullName,
+              avatar_url: avatarUrl,
+              role: 'gerente',
+            });
+            if (!insertErr) {
+              useAuthStore.setState({
+                profile: {
+                  id: userId,
+                  email,
+                  full_name: fullName,
+                  avatar_url: avatarUrl,
+                  role: 'gerente',
+                  is_active: true,
+                  created_at: new Date().toISOString(),
+                },
+              });
+            }
+          }
+
           navigate('/onboarding', { replace: true });
         }
       } catch (err) {
