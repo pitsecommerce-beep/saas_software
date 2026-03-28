@@ -1,90 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import type { Profile, TeamInvitation, UserRole } from '@/types';
+import { useEffect, useState } from 'react';
+import type { UserRole } from '@/types';
 import { motion } from 'framer-motion';
 import { Users, ShieldCheck, ShoppingCart, Truck, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useTeamStore } from '@/stores/teamStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { TeamMembers } from '@/components/team/TeamMembers';
 import { InviteCode } from '@/components/team/InviteCode';
-
-// TODO: Replace with useTeamStore when Supabase is connected
-
-const mockMembers: Profile[] = [
-  {
-    id: '1',
-    email: 'carlos.garcia@empresa.com',
-    full_name: 'Carlos Garcia',
-    avatar_url: undefined,
-    role: 'gerente',
-    team_id: 'team-1',
-    is_active: true,
-    created_at: '2025-01-15T10:00:00Z',
-  },
-  {
-    id: '2',
-    email: 'ana.martinez@empresa.com',
-    full_name: 'Ana Martinez',
-    avatar_url: undefined,
-    role: 'vendedor',
-    team_id: 'team-1',
-    is_active: true,
-    created_at: '2025-02-20T14:30:00Z',
-  },
-  {
-    id: '3',
-    email: 'luis.hernandez@empresa.com',
-    full_name: 'Luis Hernandez',
-    avatar_url: undefined,
-    role: 'vendedor',
-    team_id: 'team-1',
-    is_active: true,
-    created_at: '2025-03-05T09:15:00Z',
-  },
-  {
-    id: '4',
-    email: 'maria.lopez@empresa.com',
-    full_name: 'Maria Lopez',
-    avatar_url: undefined,
-    role: 'logistica',
-    team_id: 'team-1',
-    is_active: true,
-    created_at: '2025-03-10T11:45:00Z',
-  },
-  {
-    id: '5',
-    email: 'pedro.ramirez@empresa.com',
-    full_name: 'Pedro Ramirez',
-    avatar_url: undefined,
-    role: 'logistica',
-    team_id: 'team-1',
-    is_active: false,
-    created_at: '2025-04-01T08:00:00Z',
-  },
-];
-
-const mockInvitations: TeamInvitation[] = [
-  {
-    id: 'inv-1',
-    team_id: 'team-1',
-    email: 'sofia.torres@empresa.com',
-    role: 'vendedor',
-    status: 'pending',
-    created_at: '2026-03-20T16:00:00Z',
-  },
-  {
-    id: 'inv-2',
-    team_id: 'team-1',
-    email: 'diego.morales@empresa.com',
-    role: 'logistica',
-    status: 'pending',
-    created_at: '2026-03-22T10:30:00Z',
-  },
-];
 
 const roleLabels: Record<UserRole, string> = {
   gerente: 'Gerente',
@@ -96,12 +23,6 @@ const roleIcons: Record<UserRole, typeof ShieldCheck> = {
   gerente: ShieldCheck,
   vendedor: ShoppingCart,
   logistica: Truck,
-};
-
-const roleBadgeVariant: Record<UserRole, string> = {
-  gerente: 'bg-primary-500 text-white border-primary-500',
-  vendedor: 'bg-accent-500 text-white border-accent-500',
-  logistica: 'bg-warning-500 text-white border-warning-500',
 };
 
 const container = {
@@ -119,19 +40,38 @@ const item = {
 
 export default function TeamPage() {
   const { isDemoMode } = useDemoStore();
-  const { profile, team } = useAuthStore();
+  const { profile, team, fetchTeam } = useAuthStore();
+  const {
+    members,
+    invitations,
+    loading,
+    fetchMembers,
+    fetchInvitations,
+    removeMember,
+    updateMemberRole,
+    acceptInvitation,
+    rejectInvitation,
+    regenerateInviteCode,
+  } = useTeamStore();
 
-  const [members, setMembers] = useState<Profile[]>(
-    isDemoMode ? mockMembers : (profile ? [profile] : [])
-  );
-  const [invitations, setInvitations] = useState<TeamInvitation[]>(
-    isDemoMode ? mockInvitations : []
-  );
-  const [inviteCode, setInviteCode] = useState(
-    isDemoMode ? 'EQUIPO-A7X9K2' : (team?.invite_code ?? '')
-  );
+  const [inviteCode, setInviteCode] = useState(team?.invite_code ?? '');
+  const [regenerating, setRegenerating] = useState(false);
 
-  const currentUserRole: UserRole = profile?.role ?? 'gerente';
+  // Fetch real data from Supabase on mount
+  useEffect(() => {
+    if (isDemoMode || !team?.id) return;
+    fetchMembers(team.id);
+    fetchInvitations(team.id);
+  }, [isDemoMode, team?.id, fetchMembers, fetchInvitations]);
+
+  // Keep invite code in sync with team data
+  useEffect(() => {
+    if (team?.invite_code) {
+      setInviteCode(team.invite_code);
+    }
+  }, [team?.invite_code]);
+
+  const currentUserRole: UserRole = profile?.role ?? 'vendedor';
 
   // Stats
   const totalMembers = members.length;
@@ -144,39 +84,35 @@ export default function TeamPage() {
     {} as Record<UserRole, number>
   );
 
-  const handleRemove = (memberId: string) => {
-    setMembers((prev) => prev.filter((m) => m.id !== memberId));
+  const handleRemove = async (memberId: string) => {
+    await removeMember(memberId);
   };
 
-  const handleRoleChange = (memberId: string, newRole: UserRole) => {
-    setMembers((prev) =>
-      prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
-    );
+  const handleRoleChange = async (memberId: string, newRole: UserRole) => {
+    await updateMemberRole(memberId, newRole);
   };
 
-  const handleRegenerate = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let newCode = 'EQUIPO-';
-    for (let i = 0; i < 6; i++) {
-      newCode += chars[Math.floor(Math.random() * chars.length)];
+  const handleRegenerate = async () => {
+    if (!team?.id || regenerating) return;
+    setRegenerating(true);
+    try {
+      const newCode = await regenerateInviteCode(team.id);
+      setInviteCode(newCode);
+      // Refresh team data in authStore so it stays in sync
+      await fetchTeam();
+    } catch (err) {
+      console.error('Error regenerating invite code:', err);
+    } finally {
+      setRegenerating(false);
     }
-    setInviteCode(newCode);
   };
 
-  const handleAcceptInvitation = (invitationId: string) => {
-    setInvitations((prev) =>
-      prev.map((inv) =>
-        inv.id === invitationId ? { ...inv, status: 'accepted' as const } : inv
-      )
-    );
+  const handleAcceptInvitation = async (invitationId: string) => {
+    await acceptInvitation(invitationId);
   };
 
-  const handleRejectInvitation = (invitationId: string) => {
-    setInvitations((prev) =>
-      prev.map((inv) =>
-        inv.id === invitationId ? { ...inv, status: 'rejected' as const } : inv
-      )
-    );
+  const handleRejectInvitation = async (invitationId: string) => {
+    await rejectInvitation(invitationId);
   };
 
   const pendingInvitations = invitations.filter((inv) => inv.status === 'pending');
@@ -265,12 +201,26 @@ export default function TeamPage() {
       {/* Team members section */}
       <motion.div variants={item} className="space-y-4">
         <h2 className="text-lg font-semibold text-surface-900">Miembros del Equipo</h2>
-        <TeamMembers
-          members={members}
-          currentUserRole={currentUserRole}
-          onRemove={handleRemove}
-          onRoleChange={handleRoleChange}
-        />
+        {loading && members.length === 0 ? (
+          <Card>
+            <p className="text-sm text-surface-500 text-center py-4">
+              Cargando miembros...
+            </p>
+          </Card>
+        ) : members.length === 0 ? (
+          <Card>
+            <p className="text-sm text-surface-500 text-center py-4">
+              No hay miembros en el equipo
+            </p>
+          </Card>
+        ) : (
+          <TeamMembers
+            members={members}
+            currentUserRole={currentUserRole}
+            onRemove={handleRemove}
+            onRoleChange={handleRoleChange}
+          />
+        )}
       </motion.div>
 
       {/* Pending invitations section */}
@@ -313,7 +263,13 @@ export default function TeamPage() {
                         </p>
                         <div className="flex items-center gap-2 mt-0.5">
                           <Badge
-                            className={roleBadgeVariant[invitation.role]}
+                            className={
+                              invitation.role === 'gerente'
+                                ? 'bg-primary-500 text-white border-primary-500'
+                                : invitation.role === 'vendedor'
+                                  ? 'bg-accent-500 text-white border-accent-500'
+                                  : 'bg-warning-500 text-white border-warning-500'
+                            }
                             size="sm"
                           >
                             {roleLabels[invitation.role]}
