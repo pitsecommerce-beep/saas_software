@@ -79,13 +79,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if ((useAuthStore as unknown as { _initialized?: boolean })._initialized) return;
     (useAuthStore as unknown as { _initialized?: boolean })._initialized = true;
 
-    // Safety net: force exit loading after 8 seconds to avoid infinite loading screen.
+    // Safety net: force exit loading after 40 seconds to avoid infinite loading
+    // screen.  Allows enough time for retry attempts (3 × 10s + delays).
     const safetyTimeout = setTimeout(() => {
       if (get().loading) {
         console.warn('Auth initialization timed out — redirecting to login');
         set({ user: null, profile: null, team: null, loading: false, profileFetchFailed: false });
       }
-    }, 8000);
+    }, 40000);
 
     supabase.auth.onAuthStateChange(async (event, session) => {
       try {
@@ -101,7 +102,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !isOAuthCallback) {
             // Wrap fetches in a race against a per-operation timeout so a
             // hanging request doesn't block the app forever.
-            const withTimeout = <T>(p: Promise<T>, ms = 5000): Promise<T> =>
+            const withTimeout = <T>(p: Promise<T>, ms = 10000): Promise<T> =>
               Promise.race([
                 p,
                 new Promise<T>((_, reject) =>
@@ -109,11 +110,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 ),
               ]);
 
-            try {
-              await withTimeout(get().fetchProfile());
-              await withTimeout(get().fetchTeam());
-            } catch (fetchErr) {
-              console.warn('Profile/team fetch timed out or failed:', fetchErr);
+            // Retry logic: attempt up to 3 times before giving up, to
+            // tolerate transient network issues and avoid logging the
+            // user out unnecessarily.
+            const maxRetries = 3;
+            let lastErr: unknown;
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                await withTimeout(get().fetchProfile());
+                await withTimeout(get().fetchTeam());
+                lastErr = null;
+                break;
+              } catch (fetchErr) {
+                lastErr = fetchErr;
+                console.warn(
+                  `Profile/team fetch attempt ${attempt}/${maxRetries} failed:`,
+                  fetchErr
+                );
+                if (attempt < maxRetries) {
+                  // Wait before retrying (1s, then 2s).
+                  await new Promise((r) => setTimeout(r, attempt * 1000));
+                }
+              }
+            }
+
+            if (lastErr) {
+              console.warn('Profile/team fetch failed after all retries:', lastErr);
               // Mark as fetch failure so ProtectedRoute doesn't wrongly
               // redirect to onboarding when the real problem is a server error.
               set({ profileFetchFailed: true });
