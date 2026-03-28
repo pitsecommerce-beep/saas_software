@@ -45,7 +45,8 @@ export default function LoginPage() {
     setError('');
     try {
       await login(email, password);
-      navigate('/dashboard');
+      // Don't navigate here — onAuthStateChange will fetch profile/team,
+      // then PublicRoute will auto-redirect to /dashboard once ready.
     } catch {
       setError('Credenciales incorrectas. Inténtalo de nuevo.');
     }
