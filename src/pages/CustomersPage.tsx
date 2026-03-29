@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Customer, ChannelType } from '@/types';
 import { motion } from 'framer-motion';
 import { UserPlus, FileSpreadsheet, Upload, Download, AlertCircle } from 'lucide-react';
-import { useDemoStore } from '@/stores/demoStore';
+import { useAuthStore } from '@/stores/authStore';
+import { useCustomerStore } from '@/stores/customerStore';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { CustomerTable } from '@/components/customers/CustomerTable';
@@ -25,115 +26,17 @@ const CUSTOMER_TEMPLATE_COLUMNS = [
   { name: 'NOTAS', example: 'Cliente frecuente, prefiere pago en efectivo' },
 ];
 
-// TODO: Replace with useCustomerStore when Supabase is connected
-const initialCustomers: Customer[] = [
-  {
-    id: '1',
-    team_id: 'team-1',
-    name: 'María González López',
-    email: 'maria.gonzalez@gmail.com',
-    phone: '+52 55 1234 5678',
-    channel: 'whatsapp',
-    notes: 'Cliente frecuente, prefiere pago con tarjeta',
-    created_at: '2025-11-15T10:30:00Z',
-    updated_at: '2026-01-20T14:00:00Z',
-  },
-  {
-    id: '2',
-    team_id: 'team-1',
-    name: 'Carlos Hernández Ruiz',
-    email: 'carlos.hdz@hotmail.com',
-    phone: '+52 33 9876 5432',
-    channel: 'instagram',
-    created_at: '2025-12-03T08:15:00Z',
-    updated_at: '2026-02-10T09:30:00Z',
-  },
-  {
-    id: '3',
-    team_id: 'team-1',
-    name: 'Ana Sofía Martínez',
-    email: 'ansofi.mtz@outlook.com',
-    phone: '+52 81 5555 1234',
-    channel: 'whatsapp',
-    notes: 'Interesada en paquetes mayoreo',
-    created_at: '2025-12-20T16:45:00Z',
-    updated_at: '2026-03-01T11:20:00Z',
-  },
-  {
-    id: '4',
-    team_id: 'team-1',
-    name: 'Roberto Díaz Vargas',
-    phone: '+52 55 8765 4321',
-    channel: 'messenger',
-    created_at: '2026-01-05T12:00:00Z',
-    updated_at: '2026-01-05T12:00:00Z',
-  },
-  {
-    id: '5',
-    team_id: 'team-1',
-    name: 'Fernanda Ramírez Castro',
-    email: 'fer.ramirez@yahoo.com',
-    phone: '+52 222 333 4455',
-    channel: 'instagram',
-    notes: 'Referida por María González',
-    created_at: '2026-01-18T09:00:00Z',
-    updated_at: '2026-02-28T15:45:00Z',
-  },
-  {
-    id: '6',
-    team_id: 'team-1',
-    name: 'José Luis Morales',
-    email: 'jlmorales@empresa.mx',
-    phone: '+52 55 6677 8899',
-    channel: 'whatsapp',
-    created_at: '2026-02-01T14:30:00Z',
-    updated_at: '2026-03-15T10:00:00Z',
-  },
-  {
-    id: '7',
-    team_id: 'team-1',
-    name: 'Guadalupe Torres Medina',
-    email: 'lupe.torres@gmail.com',
-    channel: 'messenger',
-    notes: 'Solicita factura en cada compra',
-    created_at: '2026-02-14T11:00:00Z',
-    updated_at: '2026-03-10T16:30:00Z',
-  },
-  {
-    id: '8',
-    team_id: 'team-1',
-    name: 'Miguel Ángel Sánchez',
-    phone: '+52 664 123 4567',
-    channel: 'whatsapp',
-    created_at: '2026-02-28T17:20:00Z',
-    updated_at: '2026-02-28T17:20:00Z',
-  },
-  {
-    id: '9',
-    team_id: 'team-1',
-    name: 'Patricia Flores Olvera',
-    email: 'patty.flores@live.com',
-    phone: '+52 55 2233 4455',
-    channel: 'instagram',
-    notes: 'Compra regalos corporativos',
-    created_at: '2026-03-05T08:45:00Z',
-    updated_at: '2026-03-20T13:15:00Z',
-  },
-  {
-    id: '10',
-    team_id: 'team-1',
-    name: 'Alejandro Vega Núñez',
-    email: 'alex.vega@protonmail.com',
-    phone: '+52 442 987 6543',
-    channel: 'whatsapp',
-    created_at: '2026-03-12T10:10:00Z',
-    updated_at: '2026-03-22T09:00:00Z',
-  },
-];
-
 export default function CustomersPage() {
-  const { isDemoMode } = useDemoStore();
-  const [customers, setCustomers] = useState<Customer[]>(isDemoMode ? initialCustomers : []);
+  const { team } = useAuthStore();
+  const {
+    customers,
+    loading: storeLoading,
+    fetchCustomers,
+    addCustomer,
+    updateCustomer,
+    deleteCustomer,
+  } = useCustomerStore();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -141,6 +44,13 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+
+  // Fetch customers from Supabase when the team is available
+  useEffect(() => {
+    if (team?.id) {
+      fetchCustomers(team.id);
+    }
+  }, [team?.id, fetchCustomers]);
 
   // Open form for new customer
   function handleNewCustomer() {
@@ -161,61 +71,51 @@ export default function CustomersPage() {
   }
 
   // Confirm delete
-  function handleDeleteConfirm() {
+  async function handleDeleteConfirm() {
     if (!deletingCustomer) return;
-    setCustomers((prev) => prev.filter((c) => c.id !== deletingCustomer.id));
+    await deleteCustomer(deletingCustomer.id);
     setDeleteModalOpen(false);
     setDeletingCustomer(null);
   }
 
   // Handle form submit (create / edit)
-  function handleFormSubmit(data: {
+  async function handleFormSubmit(data: {
     name: string;
     email: string;
     phone: string;
     channel: ChannelType;
     notes: string;
   }) {
+    if (!team?.id) return;
     setFormLoading(true);
 
-    // Simulate async operation
-    setTimeout(() => {
+    try {
       if (editingCustomer) {
-        // Update
-        setCustomers((prev) =>
-          prev.map((c) =>
-            c.id === editingCustomer.id
-              ? {
-                  ...c,
-                  ...data,
-                  email: data.email || undefined,
-                  phone: data.phone || undefined,
-                  notes: data.notes || undefined,
-                  updated_at: new Date().toISOString(),
-                }
-              : c
-          )
-        );
-      } else {
-        // Create
-        const newCustomer: Customer = {
-          id: crypto.randomUUID(),
-          team_id: 'team-1',
+        await updateCustomer(editingCustomer.id, {
           name: data.name,
           email: data.email || undefined,
           phone: data.phone || undefined,
           channel: data.channel,
           notes: data.notes || undefined,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setCustomers((prev) => [newCustomer, ...prev]);
+        });
+      } else {
+        await addCustomer({
+          team_id: team.id,
+          name: data.name,
+          email: data.email || undefined,
+          phone: data.phone || undefined,
+          channel: data.channel,
+          notes: data.notes || undefined,
+        });
       }
 
-      setFormLoading(false);
       setFormModalOpen(false);
       setEditingCustomer(null);
-    }, 500);
+    } catch (err) {
+      console.error('Error saving customer:', err);
+    } finally {
+      setFormLoading(false);
+    }
   }
 
   return (
@@ -250,6 +150,13 @@ export default function CustomersPage() {
           </Button>
         </div>
       </div>
+
+      {/* Loading state */}
+      {storeLoading && customers.length === 0 && (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
+        </div>
+      )}
 
       {/* Table */}
       <CustomerTable
