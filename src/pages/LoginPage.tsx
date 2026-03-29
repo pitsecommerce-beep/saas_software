@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Zap } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
@@ -9,7 +9,6 @@ import { GoogleIcon } from '@/components/ui/GoogleIcon';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function LoginPage() {
-  const navigate = useNavigate();
   const { login, loginWithGoogle, loading, profileFetchFailed, logout } = useAuthStore();
 
   const [email, setEmail] = useState('');
