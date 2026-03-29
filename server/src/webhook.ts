@@ -166,7 +166,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .update({
       last_message: messageText,
       last_message_at: new Date().toISOString(),
-      unread_count: supabase.rpc ? 1 : 1, // Increment would need raw SQL
+      unread_count: 1,
     })
     .eq('id', conversation.id);
 

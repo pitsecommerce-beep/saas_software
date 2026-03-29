@@ -119,6 +119,6 @@ async function callGoogle(
     throw new Error(`Gemini API error (${response.status}): ${errorBody}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
 }
