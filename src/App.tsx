@@ -121,11 +121,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
 
-  // If no profile or no team, redirect to login so the user can
-  // register/sign-in properly. Onboarding is only accessed explicitly
-  // during the gerente registration flow.
-  if (!profile || !profile.team_id) {
+  // No profile yet — still loading or trigger hasn't fired
+  if (!profile) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Profile exists but no team — send to onboarding to create/join a team
+  if (!profile.team_id) {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return <>{children}</>;

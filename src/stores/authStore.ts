@@ -102,7 +102,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !isOAuthCallback) {
             // Wrap fetches in a race against a per-operation timeout so a
             // hanging request doesn't block the app forever.
-            const withTimeout = <T>(p: Promise<T>, ms = 10000): Promise<T> =>
+            const withTimeout = <T>(p: Promise<T>, ms = 15000): Promise<T> =>
               Promise.race([
                 p,
                 new Promise<T>((_, reject) =>
@@ -127,8 +127,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   `Profile/team fetch attempt ${attempt}/${maxRetries} failed:`,
                   fetchErr
                 );
+                // If profile was loaded (even without team), don't retry —
+                // the user just needs onboarding, not a network retry.
+                if (get().profile) {
+                  lastErr = null;
+                  break;
+                }
                 if (attempt < maxRetries) {
-                  // Wait before retrying (1s, then 2s).
+                  // Wait before retrying with exponential backoff (1s, 2s).
                   await new Promise((r) => setTimeout(r, attempt * 1000));
                 }
               }
@@ -331,8 +337,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (error) {
         // PGRST116 = no rows found — user has no profile yet (no DB trigger).
         if (error.code === 'PGRST116') {
-          console.warn('fetchProfile: no profile row found');
-          set({ profile: null, profileFetchFailed: false });
+          console.warn('fetchProfile: no profile row found, creating fallback profile');
+          // The DB trigger handle_new_user() didn't fire or was delayed.
+          // Create the profile row manually so the session isn't destroyed.
+          const meta = user.user_metadata ?? {};
+          const fallbackProfile: Omit<Profile, 'created_at'> = {
+            id: user.id,
+            email: user.email ?? '',
+            full_name: meta.full_name ?? meta.name ?? user.email ?? '',
+            avatar_url: meta.avatar_url,
+            role: meta.role ?? 'gerente',
+            is_active: true,
+          };
+          const { error: insertErr } = await supabase
+            .from('profiles')
+            .upsert(fallbackProfile, { onConflict: 'id' });
+          if (insertErr) {
+            console.warn('fetchProfile: fallback insert failed:', insertErr.message);
+          }
+          // Re-fetch to get the complete row (including created_at, team_id)
+          const { data: refetched } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+          set({ profile: (refetched as Profile) ?? null, profileFetchFailed: false });
           return;
         }
         // Any other error (500, RLS recursion, etc.) is a server failure.
