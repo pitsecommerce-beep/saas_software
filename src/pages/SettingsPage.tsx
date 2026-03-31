@@ -186,14 +186,34 @@ function SettingsPage() {
   const [yCloudApiKey, setYCloudApiKey] = useState('');
   const [yCloudPhoneNumberId, setYCloudPhoneNumberId] = useState('');
   const [yCloudWebhookToken, setYCloudWebhookToken] = useState('');
+  const [yCloudWebhookUrl, setYCloudWebhookUrl] = useState('');
   const [showYCloudKey, setShowYCloudKey] = useState(false);
   const [yCloudSaved, setYCloudSaved] = useState(false);
   const isYCloudConnected = yCloudApiKey.length > 0 && yCloudPhoneNumberId.length > 0;
 
-  const handleSaveYCloud = () => {
-    // TODO: persist to Supabase / env
-    setYCloudSaved(true);
-    setTimeout(() => setYCloudSaved(false), 2500);
+  const handleSaveYCloud = async () => {
+    if (!isSupabaseConfigured || !teamId) return;
+    try {
+      const payload = {
+        team_id: teamId,
+        api_key_encrypted: yCloudApiKey,
+        phone_number_id: yCloudPhoneNumberId,
+        webhook_token: yCloudWebhookToken || null,
+        webhook_url: yCloudWebhookUrl || null,
+      };
+      // Upsert — insert if no row for this team, otherwise update
+      const { error } = await supabase
+        .from('ycloud_settings')
+        .upsert(payload, { onConflict: 'team_id' });
+      if (error) {
+        console.error('Error saving yCloud settings:', error);
+        return;
+      }
+      setYCloudSaved(true);
+      setTimeout(() => setYCloudSaved(false), 2500);
+    } catch (err) {
+      console.error('Error saving yCloud settings:', err);
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -202,12 +222,19 @@ function SettingsPage() {
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured || !teamId || isDemoMode) return;
     try {
-      const [agentsRes, assignRes] = await Promise.all([
+      const [agentsRes, assignRes, yCloudRes] = await Promise.all([
         supabase.from('ai_agents').select('*').eq('team_id', teamId).order('created_at', { ascending: false }),
         supabase.from('channel_assignments').select('*, agent:ai_agents(*)').eq('team_id', teamId).order('created_at', { ascending: false }),
+        supabase.from('ycloud_settings').select('*').eq('team_id', teamId).maybeSingle(),
       ]);
       if (agentsRes.data) setAgents(agentsRes.data as AIAgent[]);
       if (assignRes.data) setAssignments(assignRes.data as ChannelAssignment[]);
+      if (yCloudRes.data) {
+        setYCloudApiKey(yCloudRes.data.api_key_encrypted ?? '');
+        setYCloudPhoneNumberId(yCloudRes.data.phone_number_id ?? '');
+        setYCloudWebhookToken(yCloudRes.data.webhook_token ?? '');
+        setYCloudWebhookUrl(yCloudRes.data.webhook_url ?? '');
+      }
     } catch (err) {
       console.error('Failed to load settings data:', err);
     } finally {
@@ -629,18 +656,34 @@ function SettingsPage() {
                     <h4 className="text-base font-semibold text-surface-900">URL del Webhook</h4>
                   </div>
                   <p className="text-sm text-surface-500 mb-3">
-                    Configura esta URL en el panel de yCloud para recibir mensajes entrantes:
+                    Ingresa la URL de tu servidor backend (Railway) y configúrala en el panel de yCloud para recibir mensajes entrantes:
                   </p>
-                  <div className="flex items-center gap-2 rounded-lg bg-surface-50 border border-surface-200 px-4 py-3">
-                    <code className="text-xs font-mono text-surface-700 break-all flex-1">
-                      {`${window.location.origin}/api/webhooks/ycloud`}
-                    </code>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/ycloud`)}
-                      className="shrink-0 text-xs text-primary-500 hover:text-primary-600 font-medium"
-                    >
-                      Copiar
-                    </button>
+                  <div className="space-y-3">
+                    <Input
+                      label="URL del servidor backend"
+                      placeholder="https://tu-servicio.up.railway.app"
+                      value={yCloudWebhookUrl}
+                      onChange={(e) => setYCloudWebhookUrl(e.target.value)}
+                      disabled={!isManager}
+                    />
+                    <div className="flex items-center gap-2 rounded-lg bg-surface-50 border border-surface-200 px-4 py-3">
+                      <code className="text-xs font-mono text-surface-700 break-all flex-1">
+                        {yCloudWebhookUrl
+                          ? `${yCloudWebhookUrl.replace(/\/$/, '')}/api/webhooks/ycloud`
+                          : 'https://tu-servicio.up.railway.app/api/webhooks/ycloud'}
+                      </code>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(
+                          yCloudWebhookUrl
+                            ? `${yCloudWebhookUrl.replace(/\/$/, '')}/api/webhooks/ycloud`
+                            : ''
+                        )}
+                        disabled={!yCloudWebhookUrl}
+                        className="shrink-0 text-xs text-primary-500 hover:text-primary-600 font-medium disabled:text-surface-300"
+                      >
+                        Copiar
+                      </button>
+                    </div>
                   </div>
                 </Card>
 
