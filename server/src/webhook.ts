@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { supabase } from './supabase';
+import { supabase, isConfigured } from './supabase';
 import { getAIResponse } from './ai';
 
 interface YCloudMessage {
@@ -23,6 +23,12 @@ interface YCloudWebhookEvent {
 
 export async function handleYCloudWebhook(req: Request, res: Response): Promise<void> {
   try {
+    // Check if server is properly configured
+    if (!isConfigured || !supabase) {
+      res.status(503).json({ error: 'Server not configured. Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.' });
+      return;
+    }
+
     // Verify webhook token if configured
     const webhookSecret = process.env.YCLOUD_WEBHOOK_SECRET;
     if (webhookSecret) {
