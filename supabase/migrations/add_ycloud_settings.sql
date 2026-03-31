@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS ycloud_settings (
   api_key_encrypted TEXT NOT NULL,
   phone_number_id TEXT NOT NULL,
   webhook_token TEXT,
+  webhook_url TEXT,
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
