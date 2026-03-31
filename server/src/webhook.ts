@@ -73,18 +73,27 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     return;
   }
 
-  console.log(`Incoming message from ${senderPhone}: ${messageText}`);
+  console.log(`Incoming message from ${senderPhone} to ${recipientPhone}: ${messageText}`);
 
   // 1. Find which team/agent handles this phone number
-  const { data: assignment, error: assignErr } = await supabase
+  // Try exact match first, then try with/without '+' prefix
+  const recipientWithPlus = recipientPhone.startsWith('+') ? recipientPhone : `+${recipientPhone}`;
+  const recipientWithoutPlus = recipientPhone.replace(/^\+/, '');
+
+  const { data: assignments, error: assignErr } = await supabase
     .from('channel_assignments')
     .select('*, agent:ai_agents(*)')
     .eq('channel', 'whatsapp')
-    .eq('channel_identifier', recipientPhone)
-    .single();
+    .in('channel_identifier', [recipientPhone, recipientWithPlus, recipientWithoutPlus]);
 
-  if (assignErr || !assignment) {
-    console.warn(`No agent assigned to phone ${recipientPhone}`);
+  if (assignErr) {
+    console.error('DB error looking up assignment:', assignErr.message);
+    return;
+  }
+
+  const assignment = assignments?.[0];
+  if (!assignment) {
+    console.warn(`No agent assigned to phone ${recipientPhone} (searched: ${recipientPhone}, ${recipientWithPlus}, ${recipientWithoutPlus})`);
     return;
   }
 
