@@ -75,23 +75,25 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
 
   console.log(`Incoming message from ${senderPhone} to ${recipientPhone}: ${messageText}`);
 
-  // Normalize phone numbers: strip '+' prefix for matching
-  // YCloud sends numbers without '+', but users may configure with '+'
-  const normalizePhone = (phone: string) => phone.replace(/^\+/, '');
-  const recipientNormalized = normalizePhone(recipientPhone);
-
   // 1. Find which team/agent handles this phone number
-  // Try both with and without '+' prefix to handle either format
-  const { data: assignment, error: assignErr } = await supabase
+  // Try exact match first, then try with/without '+' prefix
+  const recipientWithPlus = recipientPhone.startsWith('+') ? recipientPhone : `+${recipientPhone}`;
+  const recipientWithoutPlus = recipientPhone.replace(/^\+/, '');
+
+  const { data: assignments, error: assignErr } = await supabase
     .from('channel_assignments')
     .select('*, agent:ai_agents(*)')
     .eq('channel', 'whatsapp')
-    .or(`channel_identifier.eq.${recipientPhone},channel_identifier.eq.+${recipientNormalized},channel_identifier.eq.${recipientNormalized}`)
-    .limit(1)
-    .single();
+    .in('channel_identifier', [recipientPhone, recipientWithPlus, recipientWithoutPlus]);
 
-  if (assignErr || !assignment) {
-    console.warn(`No agent assigned to phone ${recipientPhone} (also tried +${recipientNormalized} and ${recipientNormalized})`);
+  if (assignErr) {
+    console.error('DB error looking up assignment:', assignErr.message);
+    return;
+  }
+
+  const assignment = assignments?.[0];
+  if (!assignment) {
+    console.warn(`No agent assigned to phone ${recipientPhone} (searched: ${recipientPhone}, ${recipientWithPlus}, ${recipientWithoutPlus})`);
     return;
   }
 
