@@ -73,18 +73,25 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     return;
   }
 
-  console.log(`Incoming message from ${senderPhone}: ${messageText}`);
+  console.log(`Incoming message from ${senderPhone} to ${recipientPhone}: ${messageText}`);
+
+  // Normalize phone numbers: strip '+' prefix for matching
+  // YCloud sends numbers without '+', but users may configure with '+'
+  const normalizePhone = (phone: string) => phone.replace(/^\+/, '');
+  const recipientNormalized = normalizePhone(recipientPhone);
 
   // 1. Find which team/agent handles this phone number
+  // Try both with and without '+' prefix to handle either format
   const { data: assignment, error: assignErr } = await supabase
     .from('channel_assignments')
     .select('*, agent:ai_agents(*)')
     .eq('channel', 'whatsapp')
-    .eq('channel_identifier', recipientPhone)
+    .or(`channel_identifier.eq.${recipientPhone},channel_identifier.eq.+${recipientNormalized},channel_identifier.eq.${recipientNormalized}`)
+    .limit(1)
     .single();
 
   if (assignErr || !assignment) {
-    console.warn(`No agent assigned to phone ${recipientPhone}`);
+    console.warn(`No agent assigned to phone ${recipientPhone} (also tried +${recipientNormalized} and ${recipientNormalized})`);
     return;
   }
 
