@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
-import { MessageSquare, Sparkles, ChevronRight } from 'lucide-react';
+import { MessageSquare, Sparkles, ChevronRight, Trash2 } from 'lucide-react';
 import type { Conversation, ConversationStatus, ChannelType } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 import { cn, formatRelativeTime, truncate } from '@/lib/utils';
@@ -11,6 +11,7 @@ interface ConversationCanvasProps {
   conversations: Conversation[];
   onSelect: (id: string) => void;
   onStatusChange: (id: string, status: ConversationStatus) => void;
+  onDelete?: (id: string) => void;
 }
 
 const columns: { key: ConversationStatus; label: string; color: string; dotColor: string }[] = [
@@ -31,7 +32,7 @@ const nextStatus: Record<ConversationStatus, ConversationStatus> = {
   closed: 'active',
 };
 
-function ConversationCanvas({ conversations, onSelect, onStatusChange }: ConversationCanvasProps) {
+function ConversationCanvas({ conversations, onSelect, onStatusChange, onDelete }: ConversationCanvasProps) {
   const grouped = useMemo(() => {
     const groups: Record<ConversationStatus, Conversation[]> = {
       active: [],
@@ -137,22 +138,39 @@ function ConversationCanvas({ conversations, onSelect, onStatusChange }: Convers
                         )}
                       </div>
 
-                      {/* Move status button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onStatusChange(conversation.id, nextStatus[col.key]);
-                        }}
-                        className={cn(
-                          'mt-2 w-full flex items-center justify-center gap-1 rounded-md py-1.5',
-                          'text-[11px] font-medium text-surface-500',
-                          'bg-surface-50 hover:bg-surface-100 border border-surface-100',
-                          'opacity-0 group-hover:opacity-100 transition-opacity duration-150'
+                      {/* Action buttons */}
+                      <div className="mt-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onStatusChange(conversation.id, nextStatus[col.key]);
+                          }}
+                          className={cn(
+                            'flex-1 flex items-center justify-center gap-1 rounded-md py-1.5',
+                            'text-[11px] font-medium text-surface-500',
+                            'bg-surface-50 hover:bg-surface-100 border border-surface-100'
+                          )}
+                        >
+                          Mover a {columns.find((c) => c.key === nextStatus[col.key])?.label}
+                          <ChevronRight className="h-3 w-3" />
+                        </button>
+                        {onDelete && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDelete(conversation.id);
+                            }}
+                            className={cn(
+                              'flex items-center justify-center rounded-md px-2 py-1.5',
+                              'text-surface-400 hover:bg-danger-50 hover:text-danger-500',
+                              'border border-surface-100'
+                            )}
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         )}
-                      >
-                        Mover a {columns.find((c) => c.key === nextStatus[col.key])?.label}
-                        <ChevronRight className="h-3 w-3" />
-                      </button>
+                      </div>
                     </motion.div>
                   );
                 })}

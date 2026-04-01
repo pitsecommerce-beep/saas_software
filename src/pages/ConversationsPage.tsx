@@ -533,6 +533,32 @@ export default function ConversationsPage() {
     [activeConversationId]
   );
 
+  const handleDeleteConversation = useCallback(
+    async (id: string) => {
+      if (isSupabaseConfigured && teamId) {
+        try {
+          // Delete messages first (cascade should handle it, but be explicit)
+          await supabase.from('messages').delete().eq('conversation_id', id);
+          const { error } = await supabase
+            .from('conversations')
+            .delete()
+            .eq('id', id)
+            .eq('team_id', teamId);
+          if (error) throw error;
+        } catch (err) {
+          console.error('Error deleting conversation:', err);
+          return;
+        }
+      }
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (activeConversationId === id) {
+        setActiveConversationId(null);
+        setMessages([]);
+      }
+    },
+    [teamId, activeConversationId]
+  );
+
   const handleAssignVendor = useCallback(() => {
     console.log('Assign vendor to conversation:', activeConversationId);
   }, [activeConversationId]);
@@ -605,6 +631,7 @@ export default function ConversationsPage() {
                   conversations={conversations}
                   activeId={activeConversationId}
                   onSelect={handleSelect}
+                  onDelete={handleDeleteConversation}
                 />
               </div>
 
@@ -646,6 +673,7 @@ export default function ConversationsPage() {
                 conversations={conversations}
                 onSelect={handleSelect}
                 onStatusChange={handleStatusChange}
+                onDelete={handleDeleteConversation}
               />
             </motion.div>
           )}
