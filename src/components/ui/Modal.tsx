@@ -43,12 +43,13 @@ function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
             className={cn(
               'relative w-full rounded-2xl bg-white shadow-xl',
               'border border-surface-100',
+              'max-h-[90vh] flex flex-col',
               sizeStyles[size]
             )}
           >
             {/* Header */}
             {title && (
-              <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100 shrink-0">
                 <h2 className="text-lg font-semibold text-surface-900">
                   {title}
                 </h2>
@@ -65,14 +66,14 @@ function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
             {!title && (
               <button
                 onClick={onClose}
-                className="absolute top-4 right-4 rounded-lg p-1.5 text-surface-400 hover:text-surface-600 hover:bg-surface-100 transition-colors duration-150"
+                className="absolute top-4 right-4 z-10 rounded-lg p-1.5 text-surface-400 hover:text-surface-600 hover:bg-surface-100 transition-colors duration-150"
               >
                 <X className="h-5 w-5" />
               </button>
             )}
 
-            {/* Body */}
-            <div className="px-6 py-4">{children}</div>
+            {/* Body - scrollable */}
+            <div className="px-6 py-4 overflow-y-auto">{children}</div>
           </motion.div>
         </div>
       )}

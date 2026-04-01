@@ -155,6 +155,8 @@ src/
 VITE_SUPABASE_URL          - URL de tu proyecto Supabase
 VITE_SUPABASE_ANON_KEY     - Anon key de Supabase
 VITE_YCLOUD_API_KEY        - API key de YCloud (para mensajería)
+VITE_API_URL               - URL del backend en Railway (ej: https://tu-servicio.up.railway.app)
+                             Necesario para enviar mensajes desde la UI al celular del cliente
 ```
 
 ### Configuración en Supabase Dashboard

@@ -168,9 +168,9 @@ function SettingsPage() {
   const teamId = profile?.team_id ?? team?.id;
 
   const [activeTab, setActiveTab] = useState<TabId>('agents');
-  const [agents, setAgents] = useState<AIAgent[]>(isDemoMode ? MOCK_AGENTS : []);
+  const [agents, setAgents] = useState<AIAgent[]>(isDemoMode && !isSupabaseConfigured ? MOCK_AGENTS : []);
   const [assignments, setAssignments] = useState<ChannelAssignment[]>(
-    isDemoMode ? MOCK_ASSIGNMENTS : []
+    isDemoMode && !isSupabaseConfigured ? MOCK_ASSIGNMENTS : []
   );
   const [editingAgent, setEditingAgent] = useState<AIAgent | null>(null);
   const [showAgentModal, setShowAgentModal] = useState(false);
@@ -220,7 +220,10 @@ function SettingsPage() {
   // Supabase data fetching
   // ---------------------------------------------------------------------------
   const loadData = useCallback(async () => {
-    if (!isSupabaseConfigured || !teamId || isDemoMode) return;
+    if (!isSupabaseConfigured || !teamId) {
+      setDataLoaded(true);
+      return;
+    }
     try {
       const [agentsRes, assignRes, yCloudRes] = await Promise.all([
         supabase.from('ai_agents').select('*').eq('team_id', teamId).order('created_at', { ascending: false }),
@@ -240,7 +243,7 @@ function SettingsPage() {
     } finally {
       setDataLoaded(true);
     }
-  }, [teamId, isDemoMode]);
+  }, [teamId]);
 
   useEffect(() => {
     if (!dataLoaded) loadData();

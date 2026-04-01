@@ -409,7 +409,61 @@ export default function ConversationsPage() {
     async (content: string) => {
       if (!activeConversationId) return;
 
-      if (isSupabaseConfigured) {
+      const apiUrl = import.meta.env.VITE_API_URL;
+
+      if (isSupabaseConfigured && apiUrl) {
+        try {
+          // Send through backend API which handles YCloud delivery + DB persistence
+          const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/messages/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              conversation_id: activeConversationId,
+              content,
+            }),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            console.error('Send message API error:', errData);
+            // Still save locally even if YCloud delivery fails
+          }
+
+          // Optimistically add message to UI (backend already saved it)
+          const nowStr = new Date().toISOString();
+          const optimisticMsg: Message = {
+            id: `msg-pending-${Date.now()}`,
+            conversation_id: activeConversationId,
+            sender_type: 'agent',
+            content,
+            created_at: nowStr,
+          };
+          setMessages((prev) => [...prev, optimisticMsg]);
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === activeConversationId
+                ? { ...c, last_message: content, last_message_at: nowStr }
+                : c
+            )
+          );
+        } catch (err) {
+          console.error('Error sending message:', err);
+          // Fallback: save directly to Supabase without YCloud delivery
+          const { data: newMsg } = await supabase
+            .from('messages')
+            .insert({
+              conversation_id: activeConversationId,
+              sender_type: 'agent',
+              content,
+            })
+            .select()
+            .single();
+          if (newMsg) {
+            setMessages((prev) => [...prev, newMsg as Message]);
+          }
+        }
+      } else if (isSupabaseConfigured) {
+        // Supabase configured but no backend URL - save to DB only (no YCloud delivery)
         try {
           const { data: newMsg, error } = await supabase
             .from('messages')
@@ -421,10 +475,7 @@ export default function ConversationsPage() {
             .select()
             .single();
           if (error) throw error;
-
           setMessages((prev) => [...prev, newMsg as Message]);
-
-          // Update conversation's last message
           await supabase
             .from('conversations')
             .update({
@@ -432,7 +483,6 @@ export default function ConversationsPage() {
               last_message_at: new Date().toISOString(),
             })
             .eq('id', activeConversationId);
-
           setConversations((prev) =>
             prev.map((c) =>
               c.id === activeConversationId

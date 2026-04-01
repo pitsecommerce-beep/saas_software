@@ -1,9 +1,14 @@
 import express from 'express';
+import cors from 'cors';
 import { handleYCloudWebhook } from './webhook';
+import { handleSendMessage } from './outbound';
 import { isConfigured } from './supabase';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Enable CORS for frontend requests
+app.use(cors());
 
 // YCloud sends JSON payloads
 app.use(express.json());
@@ -25,6 +30,9 @@ app.get('/', (_req, res) => {
 
 // YCloud webhook endpoint
 app.post('/api/webhooks/ycloud', handleYCloudWebhook);
+
+// Outbound message endpoint — send messages from UI to customer via YCloud
+app.post('/api/messages/send', handleSendMessage);
 
 app.listen(PORT, () => {
   console.log(`Orkesta webhook server running on port ${PORT}`);
