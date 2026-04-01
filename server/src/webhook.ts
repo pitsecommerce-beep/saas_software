@@ -266,35 +266,24 @@ async function getKnowledgeContext(teamId: string, userMessage: string): Promise
     .split(/\s+/)
     .filter((w) => w.length > 2 && !stopwords.has(w));
 
-  // Fetch rows per KB, filtered by user message keywords
+  // Search rows via Postgres RPC — filtering happens in the DB, not client-side
   const rowsByKb: Record<string, { row_data: Record<string, unknown> }[]> = {};
   const MAX_ROWS_PER_KB = 10;
 
-  for (const kb of knowledgeBases) {
-    const { data: rows } = await supabase
-      .from('knowledge_rows')
-      .select('row_data')
-      .eq('knowledge_base_id', kb.id)
-      .limit(500);
+  if (keywords.length > 0) {
+    const { data: matchedRows } = await supabase.rpc('search_knowledge_rows', {
+      kb_ids: kbIds,
+      search_keywords: keywords,
+      max_per_kb: MAX_ROWS_PER_KB,
+    });
 
-    if (!rows?.length) continue;
-
-    if (keywords.length > 0) {
-      // Client-side keyword filter: normalize row text and match against keywords
-      const filtered = rows.filter((r) => {
-        const text = JSON.stringify(r.row_data)
-          .toLowerCase()
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        return keywords.some((kw) => text.includes(kw));
-      });
-      if (filtered.length > 0) {
-        rowsByKb[kb.id] = filtered.slice(0, MAX_ROWS_PER_KB);
-      }
-    } else {
-      // No keywords extracted (short message like "hola") — skip data rows
-      // Schema/columns are still sent so the AI knows what info is available
+    for (const row of matchedRows ?? []) {
+      if (!rowsByKb[row.knowledge_base_id]) rowsByKb[row.knowledge_base_id] = [];
+      rowsByKb[row.knowledge_base_id]!.push(row);
     }
   }
+  // When no keywords (short messages like "hola"), no rows are sent —
+  // the schema/columns are still included so the AI knows what info is available
 
   // Build output in compact CSV format with only relevant columns
   const sections: string[] = [];
