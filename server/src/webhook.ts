@@ -257,36 +257,36 @@ async function getKnowledgeContext(teamId: string, userMessage: string): Promise
     colsByKb[col.knowledge_base_id]!.push(col);
   }
 
-  // Extract keywords from user message for pre-filtering (words > 3 chars)
-  const stopwords = new Set(['para', 'como', 'este', 'esta', 'esos', 'esas', 'tiene', 'tiene', 'están', 'están', 'puede', 'sobre', 'desde', 'hasta', 'donde', 'cuando', 'cuanto', 'cuánto', 'porque', 'todo', 'toda', 'todos', 'todas', 'cual', 'cuál', 'quiero', 'necesito', 'hola', 'buenas', 'buenos', 'gracias', 'favor', 'with', 'that', 'this', 'from', 'have', 'what', 'your', 'which']);
+  // Extract keywords from user message for pre-filtering (words > 2 chars)
+  const stopwords = new Set(['para', 'como', 'este', 'esta', 'esos', 'esas', 'tiene', 'están', 'puede', 'sobre', 'desde', 'hasta', 'donde', 'cuando', 'cuanto', 'cuánto', 'porque', 'todo', 'toda', 'todos', 'todas', 'cual', 'cuál', 'quiero', 'necesito', 'hola', 'buenas', 'buenos', 'gracias', 'favor', 'with', 'that', 'this', 'from', 'have', 'what', 'your', 'which', 'una', 'uno', 'unos', 'unas', 'los', 'las', 'del', 'por', 'que', 'más', 'mas', 'hay', 'son', 'con']);
   const keywords = userMessage
     .toLowerCase()
-    .replace(/[^\w\sáéíóúñü]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove accents for matching
+    .replace(/[^a-z0-9\s]/g, '')
     .split(/\s+/)
-    .filter((w) => w.length > 3 && !stopwords.has(w));
+    .filter((w) => w.length > 2 && !stopwords.has(w));
 
   // Fetch rows per KB, filtered by user message keywords
   const rowsByKb: Record<string, { row_data: Record<string, unknown> }[]> = {};
   const MAX_ROWS_PER_KB = 10;
 
   for (const kb of knowledgeBases) {
-    // Fetch a batch of rows to filter from (larger pool if we have keywords)
-    const fetchLimit = keywords.length > 0 ? 100 : MAX_ROWS_PER_KB;
     const { data: rows } = await supabase
       .from('knowledge_rows')
       .select('row_data')
       .eq('knowledge_base_id', kb.id)
-      .limit(fetchLimit);
+      .limit(500);
 
     if (!rows?.length) continue;
 
     if (keywords.length > 0) {
-      // Client-side keyword filter: keep rows where any value matches any keyword
+      // Client-side keyword filter: normalize row text and match against keywords
       const filtered = rows.filter((r) => {
-        const text = JSON.stringify(r.row_data).toLowerCase();
+        const text = JSON.stringify(r.row_data)
+          .toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         return keywords.some((kw) => text.includes(kw));
       });
-      // Only include rows that actually matched — no fallback to irrelevant data
       if (filtered.length > 0) {
         rowsByKb[kb.id] = filtered.slice(0, MAX_ROWS_PER_KB);
       }
