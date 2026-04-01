@@ -109,23 +109,24 @@ function ExcelUploader({ mode, onUpload, templateColumns }: ExcelUploaderProps) 
           return;
         }
 
-        const detectedCols = Object.keys(jsonData[0]);
+        // Detect ALL columns across all rows (not just the first row)
+        // SheetJS may omit columns from rows where the cell is empty
+        const colSet = new Set<string>();
+        for (const row of jsonData) {
+          for (const key of Object.keys(row)) {
+            colSet.add(key);
+          }
+        }
+        const detectedCols = Array.from(colSet);
 
-        // Template mode: validate columns match
+        // Template mode: only validate that required columns are present
+        // Extra columns in the file are allowed and will be included
         if (mode === 'template' && templateColumns) {
           const missing = templateColumns.filter((tc) => !detectedCols.includes(tc));
-          const extra = detectedCols.filter((dc) => !templateColumns.includes(dc));
 
           if (missing.length > 0) {
             setError(
               `Columnas faltantes en el archivo: ${missing.join(', ')}. Descarga la plantilla para ver el formato correcto.`
-            );
-            setIsLoading(false);
-            return;
-          }
-          if (extra.length > 0) {
-            setError(
-              `Columnas no reconocidas: ${extra.join(', ')}. El archivo debe coincidir exactamente con la plantilla.`
             );
             setIsLoading(false);
             return;
