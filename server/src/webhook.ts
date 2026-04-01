@@ -199,8 +199,8 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .order('created_at', { ascending: true })
     .limit(20);
 
-  // Fetch knowledge base context if available (filtered by user message)
-  const knowledgeContext = await getKnowledgeContext(teamId, messageText);
+  // Fetch knowledge base context if available
+  const knowledgeContext = await getKnowledgeContext(teamId);
 
   // Get AI response
   const aiResponse = await getAIResponse(agent, recentMessages ?? [], knowledgeContext);
@@ -233,7 +233,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   console.log(`Replied to ${senderPhone} via agent "${agent.name}"`);
 }
 
-async function getKnowledgeContext(teamId: string, userMessage: string): Promise<string> {
+async function getKnowledgeContext(teamId: string): Promise<string> {
   const { data: knowledgeBases } = await supabase
     .from('knowledge_bases')
     .select('id, name, description')
@@ -250,82 +250,40 @@ async function getKnowledgeContext(teamId: string, userMessage: string): Promise
     .select('knowledge_base_id, column_name, description, data_type')
     .in('knowledge_base_id', kbIds);
 
-  // Group columns by knowledge base
+  // Fetch actual row data (limit to avoid exceeding token limits)
+  const { data: rows } = await supabase
+    .from('knowledge_rows')
+    .select('knowledge_base_id, row_data')
+    .in('knowledge_base_id', kbIds)
+    .limit(200);
+
+  // Group columns and rows by knowledge base
   const colsByKb: Record<string, typeof columns> = {};
+  const rowsByKb: Record<string, typeof rows> = {};
   for (const col of columns ?? []) {
     if (!colsByKb[col.knowledge_base_id]) colsByKb[col.knowledge_base_id] = [];
     colsByKb[col.knowledge_base_id]!.push(col);
   }
-
-  // Extract keywords from user message for pre-filtering (words > 3 chars)
-  const stopwords = new Set(['para', 'como', 'este', 'esta', 'esos', 'esas', 'tiene', 'tiene', 'están', 'están', 'puede', 'sobre', 'desde', 'hasta', 'donde', 'cuando', 'cuanto', 'cuánto', 'porque', 'todo', 'toda', 'todos', 'todas', 'cual', 'cuál', 'quiero', 'necesito', 'hola', 'buenas', 'buenos', 'gracias', 'favor', 'with', 'that', 'this', 'from', 'have', 'what', 'your', 'which']);
-  const keywords = userMessage
-    .toLowerCase()
-    .replace(/[^\w\sáéíóúñü]/g, '')
-    .split(/\s+/)
-    .filter((w) => w.length > 3 && !stopwords.has(w));
-
-  // Fetch rows per KB, filtered by user message keywords
-  const rowsByKb: Record<string, { row_data: Record<string, unknown> }[]> = {};
-  const MAX_ROWS_PER_KB = 10;
-
-  for (const kb of knowledgeBases) {
-    // Fetch a batch of rows to filter from (larger pool if we have keywords)
-    const fetchLimit = keywords.length > 0 ? 100 : MAX_ROWS_PER_KB;
-    const { data: rows } = await supabase
-      .from('knowledge_rows')
-      .select('row_data')
-      .eq('knowledge_base_id', kb.id)
-      .limit(fetchLimit);
-
-    if (!rows?.length) continue;
-
-    if (keywords.length > 0) {
-      // Client-side keyword filter: keep rows where any value matches any keyword
-      const filtered = rows.filter((r) => {
-        const text = JSON.stringify(r.row_data).toLowerCase();
-        return keywords.some((kw) => text.includes(kw));
-      });
-      // Only include rows that actually matched — no fallback to irrelevant data
-      if (filtered.length > 0) {
-        rowsByKb[kb.id] = filtered.slice(0, MAX_ROWS_PER_KB);
-      }
-    } else {
-      // No keywords extracted (short message like "hola") — skip data rows
-      // Schema/columns are still sent so the AI knows what info is available
-    }
+  for (const row of rows ?? []) {
+    if (!rowsByKb[row.knowledge_base_id]) rowsByKb[row.knowledge_base_id] = [];
+    rowsByKb[row.knowledge_base_id]!.push(row);
   }
 
-  // Build output in compact CSV format with only relevant columns
   const sections: string[] = [];
   for (const kb of knowledgeBases) {
     let section = `[${kb.name}]: ${kb.description ?? 'Sin descripción'}`;
 
+    // Add column schema
     const kbCols = colsByKb[kb.id];
     if (kbCols?.length) {
       section += '\nColumnas: ' + kbCols.map((c) => `${c.column_name} (${c.description})`).join(', ');
     }
 
+    // Add actual data rows
     const kbRows = rowsByKb[kb.id];
     if (kbRows?.length) {
-      // Get only columns defined in knowledge_columns (filter out Excel junk)
-      const relevantColNames = kbCols?.map((c) => c.column_name) ?? [];
-
-      if (relevantColNames.length > 0) {
-        // CSV format: header row + pipe-separated values
-        section += '\nDatos:\n';
-        section += relevantColNames.join('|');
-        section += '\n' + kbRows.map((r) =>
-          relevantColNames.map((col) => {
-            const val = r.row_data[col];
-            return val !== null && val !== undefined ? String(val) : '';
-          }).join('|')
-        ).join('\n');
-      } else {
-        // Fallback: if no columns defined, use compact JSON
-        section += '\nDatos:\n';
-        section += kbRows.map((r) => JSON.stringify(r.row_data)).join('\n');
-      }
+      section += '\nDatos:\n';
+      section += kbRows.map((r) => JSON.stringify(r.row_data)).join('\n');
     }
 
     sections.push(section);
