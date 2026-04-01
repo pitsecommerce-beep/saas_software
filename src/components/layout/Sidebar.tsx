@@ -12,6 +12,7 @@ import {
   ChevronRight,
   X,
   User,
+  Database,
 } from 'lucide-react';
 import type { Profile } from '@/types';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/conversations', label: 'Conversaciones', icon: MessageSquare },
   { to: '/customers', label: 'Clientes', icon: Users },
+  { to: '/knowledge-bases', label: 'Bases de Datos', icon: Database },
   { to: '/team', label: 'Equipo', icon: UserPlus },
   { to: '/settings', label: 'Configuración', icon: Settings },
 ];

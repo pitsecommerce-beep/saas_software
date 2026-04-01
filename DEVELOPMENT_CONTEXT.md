@@ -173,7 +173,11 @@ Authentication > URL Configuration:
 SUPABASE_URL               - URL de tu proyecto Supabase
 SUPABASE_SERVICE_ROLE_KEY  - Service role key (NO la anon key)
 YCLOUD_API_KEY             - API key de YCloud
-YCLOUD_WEBHOOK_SECRET      - Secret para validar webhooks de YCloud
+YCLOUD_WEBHOOK_SECRET      - ⚠️ DEJAR EN BLANCO (vacío). La validación de webhook
+                             funciona sin este secret. Configurar un valor aquí
+                             puede causar que los webhooks de YCloud sean rechazados
+                             si la firma no coincide. Se dejó vacío intencionalmente
+                             en la configuración actual de Railway (marzo 2026).
 PORT                       - Puerto (Railway lo asigna automáticamente)
 ```
 
@@ -210,16 +214,46 @@ Railway se usa para el backend que maneja webhooks de YCloud y procesa mensajes 
 5. Obtener URL pública del servicio para configurar webhooks en YCloud
 
 ### YCloud Webhook Configuration
-1. En YCloud Dashboard, crear webhook endpoint apuntando a: `https://<railway-url>/api/webhook/ycloud`
-2. Configurar eventos: `message.received`, `message.status_updated`
-3. Guardar el webhook secret en Railway como `YCLOUD_WEBHOOK_SECRET`
+1. En YCloud Dashboard, crear webhook endpoint apuntando a: `https://<railway-url>/api/webhooks/ycloud`
+2. Configurar eventos: `whatsapp.inbound_message.received`, `whatsapp.message.updated`
+3. `YCLOUD_WEBHOOK_SECRET` debe **dejarse vacío** en Railway. La conexión entre Railway, YCloud y la plataforma funciona correctamente sin este secret (validado marzo 2026). Si se configura un valor, los webhooks podrían ser rechazados.
+
+### Notas de Configuración (Registro de Decisiones)
+- **YCLOUD_WEBHOOK_SECRET vacío en Railway**: Se dejó intencionalmente en blanco. La lógica del servidor (`server/src/webhook.ts`) solo valida la firma si `YCLOUD_WEBHOOK_SECRET` tiene un valor. Al dejarlo vacío, todos los webhooks entrantes de YCloud son aceptados sin validación de firma, lo cual funciona correctamente en el entorno actual.
+- **Conexión Railway ↔ YCloud ↔ Plataforma**: Validada y funcionando (marzo 2026). La configuración guardada en Supabase responde correctamente.
+
+## Cambios Recientes (marzo 2026)
+
+### ConversationsPage - Datos reales de Supabase
+- La página de conversaciones ahora se conecta directamente a Supabase en lugar de usar solo datos mock.
+- Incluye suscripción en tiempo real (Realtime) para nuevos mensajes y actualizaciones de conversaciones.
+- Los mensajes enviados desde la UI se guardan en Supabase y se actualiza `last_message` en la conversación.
+- Los mensajes del cliente que llegan por webhook también se ven reflejados en tiempo real.
+- El fallback a datos mock solo se usa cuando Supabase no está configurado y el modo demo está activo.
+
+### DashboardPage - Métricas reales
+- El dashboard ahora calcula métricas reales desde Supabase: total de conversaciones, clientes, tiempo de respuesta promedio, y tasa de resolución.
+- Incluye gráficas de conversaciones por día (últimos 30 días), distribución por canal, y rendimiento de vendedores.
+- Se agregó una sección de "Conversaciones Recientes" que muestra las últimas 5 conversaciones con su canal, estado y tiempo.
+
+### KnowledgeBasesPage - Nueva página de Bases de Datos
+- Ruta: `/knowledge-bases`
+- Permite cargar bases de conocimiento (Excel) para que la IA consulte datos.
+- Incluye plantilla descargable de productos con el esquema de autopartes (sku, descripcion, existencia_cdmx, existencia_tulti, existencia_foranea, url_imagen, precio_compra, precio_venta, parte, modelo, marca, modelos_compatibles, lado, del_tras, int_ext).
+- Dos modos de carga: libre (cualquier Excel) y desde plantilla (valida columnas exactas).
+- Cada columna cargada requiere una descripción para que el agente de IA sepa qué datos puede consultar.
+- Las bases de datos se almacenan en Supabase (tablas `knowledge_bases` y `knowledge_columns`).
+
+### Webhook - Mensajes entrantes
+- El webhook (`server/src/webhook.ts`) ya guardaba los mensajes del cliente (`sender_type: 'customer'`) en la tabla `messages`.
+- El problema era que la UI no mostraba datos reales al no conectarse a Supabase. Ahora con la ConversationsPage conectada, los mensajes del cliente se ven correctamente.
 
 ## Próximos Pasos (para futuras sesiones)
 
-1. Implementar servidor Express en Railway para webhooks de YCloud
-2. Implementar módulo de Logística completo
-3. Implementar módulo de Almacén
-4. Implementar módulo de Servicios
-5. Portal de administrador (otro repositorio)
-6. Integración real con proveedores de IA
-7. Tests E2E con Playwright
+1. Implementar módulo de Logística completo
+2. Implementar módulo de Almacén
+3. Implementar módulo de Servicios
+4. Portal de administrador (otro repositorio)
+5. Tests E2E con Playwright
+6. Code splitting para reducir bundle size
+7. Almacenar datos del Excel cargado en la tabla `knowledge_bases` como JSON o en Storage de Supabase para consulta por la IA

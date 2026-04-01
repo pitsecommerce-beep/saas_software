@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
+import { useAuthStore } from '@/stores/authStore';
 import type { Conversation, Message, ConversationStatus, Customer, ChannelType } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -12,8 +13,20 @@ import { ConversationList } from '@/components/conversations/ConversationList';
 import { ConversationCanvas } from '@/components/conversations/ConversationCanvas';
 import { ChatWindow } from '@/components/conversations/ChatWindow';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
-// TODO: Replace with useConversationStore when Supabase is connected
+const isSupabaseConfigured = Boolean(
+  import.meta.env.VITE_SUPABASE_URL &&
+  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') &&
+  !import.meta.env.VITE_SUPABASE_URL.includes('your-project') &&
+  import.meta.env.VITE_SUPABASE_ANON_KEY &&
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('placeholder') &&
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('your-anon-key')
+);
+
+// ---------------------------------------------------------------------------
+// Mock data (fallback for demo mode)
+// ---------------------------------------------------------------------------
 
 const now = new Date();
 const minutesAgo = (m: number) => new Date(now.getTime() - m * 60000).toISOString();
@@ -75,112 +88,6 @@ const mockConversations: Conversation[] = [
     unread_count: 1,
     created_at: minutesAgo(4320),
   },
-  {
-    id: 'conv-3',
-    team_id: 'team-1',
-    channel: 'instagram',
-    channel_contact_id: 'ig_user_42398',
-    status: 'pending',
-    is_ai_enabled: true,
-    last_message: 'Hola! Vi su publicacion de los productos nuevos, tienen disponibles?',
-    last_message_at: minutesAgo(15),
-    unread_count: 2,
-    created_at: minutesAgo(15),
-  },
-  {
-    id: 'conv-4',
-    team_id: 'team-1',
-    customer_id: 'cust-4',
-    customer: {
-      id: 'cust-4',
-      team_id: 'team-1',
-      name: 'Ana Sofia Ramirez',
-      email: 'ana.ramirez@gmail.com',
-      phone: '+52 81 5555 1234',
-      channel: 'messenger',
-      channel_id: 'fb_ana_ramirez',
-      created_at: minutesAgo(30240),
-      updated_at: minutesAgo(120),
-    },
-    channel: 'messenger',
-    channel_contact_id: 'fb_ana_ramirez',
-    status: 'active',
-    is_ai_enabled: true,
-    last_message: 'Gracias por la cotizacion, lo reviso con mi equipo y les confirmo manana',
-    last_message_at: minutesAgo(120),
-    unread_count: 0,
-    created_at: minutesAgo(10080),
-  },
-  {
-    id: 'conv-5',
-    team_id: 'team-1',
-    channel: 'whatsapp',
-    channel_contact_id: '5214491234567',
-    status: 'pending',
-    is_ai_enabled: false,
-    last_message: 'Buenas tardes, quisiera informacion sobre sus servicios de logistica',
-    last_message_at: minutesAgo(45),
-    unread_count: 1,
-    created_at: minutesAgo(45),
-  },
-  {
-    id: 'conv-6',
-    team_id: 'team-1',
-    customer_id: 'cust-6',
-    customer: {
-      id: 'cust-6',
-      team_id: 'team-1',
-      name: 'Luis Fernando Torres',
-      phone: '+52 55 8888 4321',
-      channel: 'whatsapp',
-      channel_id: '5215588884321',
-      created_at: minutesAgo(40320),
-      updated_at: minutesAgo(4320),
-    },
-    channel: 'whatsapp',
-    channel_contact_id: '5215588884321',
-    status: 'closed',
-    is_ai_enabled: false,
-    last_message: 'Listo, ya recibi el pedido. Todo en orden, muchas gracias!',
-    last_message_at: minutesAgo(4320),
-    unread_count: 0,
-    created_at: minutesAgo(20160),
-  },
-  {
-    id: 'conv-7',
-    team_id: 'team-1',
-    customer_id: 'cust-7',
-    customer: {
-      id: 'cust-7',
-      team_id: 'team-1',
-      name: 'Patricia Vega',
-      email: 'patricia.vega@empresa.mx',
-      channel: 'instagram',
-      channel_id: 'ig_patriciavega',
-      created_at: minutesAgo(15120),
-      updated_at: minutesAgo(1440),
-    },
-    channel: 'instagram',
-    channel_contact_id: 'ig_patriciavega',
-    status: 'closed',
-    is_ai_enabled: true,
-    last_message: 'Excelente servicio, los recomendare con mis contactos',
-    last_message_at: minutesAgo(1440),
-    unread_count: 0,
-    created_at: minutesAgo(10080),
-  },
-  {
-    id: 'conv-8',
-    team_id: 'team-1',
-    channel: 'messenger',
-    channel_contact_id: 'fb_unknown_839',
-    status: 'active',
-    is_ai_enabled: true,
-    last_message: 'Tienen envio a Monterrey? Necesito 50 unidades',
-    last_message_at: minutesAgo(8),
-    unread_count: 4,
-    created_at: minutesAgo(8),
-  },
 ];
 
 const mockMessages: Record<string, Message[]> = {
@@ -196,44 +103,8 @@ const mockMessages: Record<string, Message[]> = {
       id: 'msg-1-2',
       conversation_id: 'conv-1',
       sender_type: 'ai',
-      content: 'Hola Maria! Con gusto te ayudo con la cotizacion. Contamos con varios paquetes. Cual es el giro de tu tienda para recomendarte los productos ideales?',
+      content: 'Hola Maria! Con gusto te ayudo con la cotizacion.',
       created_at: minutesAgo(59),
-    },
-    {
-      id: 'msg-1-3',
-      conversation_id: 'conv-1',
-      sender_type: 'customer',
-      content: 'Tengo una tienda de regalos y accesorios en Polanco. Busco productos premium.',
-      created_at: minutesAgo(55),
-    },
-    {
-      id: 'msg-1-4',
-      conversation_id: 'conv-1',
-      sender_type: 'ai',
-      content: 'Excelente! Para tiendas como la tuya, te recomiendo nuestro Paquete Premium que incluye 200 piezas variadas con un margen de ganancia del 40%. El precio regular es de $15,000 MXN pero tenemos un descuento del 10% en primera compra.',
-      created_at: minutesAgo(54),
-    },
-    {
-      id: 'msg-1-5',
-      conversation_id: 'conv-1',
-      sender_type: 'customer',
-      content: 'Se escucha bien! Y tienen catalogo en linea?',
-      created_at: minutesAgo(20),
-    },
-    {
-      id: 'msg-1-6',
-      conversation_id: 'conv-1',
-      sender_type: 'agent',
-      sender_id: 'profile-1',
-      content: 'Hola Maria! Soy Carlos, tu asesor asignado. Te comparto el catalogo digital: https://catalogo.empresa.mx/premium-2026 \n\nCualquier duda estoy para ayudarte.',
-      created_at: minutesAgo(15),
-    },
-    {
-      id: 'msg-1-7',
-      conversation_id: 'conv-1',
-      sender_type: 'customer',
-      content: 'Perfecto, me interesa el paquete premium. Cual es el precio mayoreo?',
-      created_at: minutesAgo(2),
     },
   ],
   'conv-2': [
@@ -241,177 +112,20 @@ const mockMessages: Record<string, Message[]> = {
       id: 'msg-2-1',
       conversation_id: 'conv-2',
       sender_type: 'customer',
-      content: 'Buenos dias, ya quiero finalizar mi pedido del mes. Son las mismas 100 unidades de siempre.',
+      content: 'Buenos dias, ya quiero finalizar mi pedido del mes.',
       created_at: minutesAgo(180),
-    },
-    {
-      id: 'msg-2-2',
-      conversation_id: 'conv-2',
-      sender_type: 'agent',
-      content: 'Hola Roberto! Claro, tu pedido recurrente de 100 unidades del modelo estándar. El total seria de $8,500 MXN. Te paso los datos para la transferencia.',
-      created_at: minutesAgo(170),
-    },
-    {
-      id: 'msg-2-3',
-      conversation_id: 'conv-2',
-      sender_type: 'customer',
-      content: 'Ya realice la transferencia, les envio el comprobante',
-      created_at: minutesAgo(30),
-    },
-  ],
-  'conv-3': [
-    {
-      id: 'msg-3-1',
-      conversation_id: 'conv-3',
-      sender_type: 'customer',
-      content: 'Hola! Vi su publicacion de los productos nuevos, tienen disponibles?',
-      created_at: minutesAgo(15),
-    },
-  ],
-  'conv-4': [
-    {
-      id: 'msg-4-1',
-      conversation_id: 'conv-4',
-      sender_type: 'customer',
-      content: 'Hola, necesito una cotizacion para evento corporativo de 200 personas.',
-      created_at: minutesAgo(2880),
-    },
-    {
-      id: 'msg-4-2',
-      conversation_id: 'conv-4',
-      sender_type: 'ai',
-      content: 'Hola Ana Sofia! Con gusto preparo tu cotizacion. Para un evento de 200 personas tenemos el Paquete Corporativo que incluye decoracion, materiales promocionales y detalles personalizados. El rango de precio es entre $45,000 y $65,000 MXN dependiendo de las especificaciones. Quieres que te envie la propuesta detallada?',
-      created_at: minutesAgo(2870),
-    },
-    {
-      id: 'msg-4-3',
-      conversation_id: 'conv-4',
-      sender_type: 'customer',
-      content: 'Si, por favor envienme la propuesta completa con opciones.',
-      created_at: minutesAgo(1440),
-    },
-    {
-      id: 'msg-4-4',
-      conversation_id: 'conv-4',
-      sender_type: 'agent',
-      content: 'Ana Sofia, te acabo de enviar la propuesta a tu correo con 3 opciones de paquete. Cualquier ajuste me dices!',
-      created_at: minutesAgo(130),
-    },
-    {
-      id: 'msg-4-5',
-      conversation_id: 'conv-4',
-      sender_type: 'customer',
-      content: 'Gracias por la cotizacion, lo reviso con mi equipo y les confirmo manana',
-      created_at: minutesAgo(120),
-    },
-  ],
-  'conv-5': [
-    {
-      id: 'msg-5-1',
-      conversation_id: 'conv-5',
-      sender_type: 'customer',
-      content: 'Buenas tardes, quisiera informacion sobre sus servicios de logistica',
-      created_at: minutesAgo(45),
-    },
-  ],
-  'conv-6': [
-    {
-      id: 'msg-6-1',
-      conversation_id: 'conv-6',
-      sender_type: 'customer',
-      content: 'Ya llego mi paquete?',
-      created_at: minutesAgo(5760),
-    },
-    {
-      id: 'msg-6-2',
-      conversation_id: 'conv-6',
-      sender_type: 'agent',
-      content: 'Hola Luis, tu paquete salio hoy por paqueteria. El numero de guia es: GUA-2026-4521. Llega en 2-3 dias habiles.',
-      created_at: minutesAgo(5700),
-    },
-    {
-      id: 'msg-6-3',
-      conversation_id: 'conv-6',
-      sender_type: 'customer',
-      content: 'Listo, ya recibi el pedido. Todo en orden, muchas gracias!',
-      created_at: minutesAgo(4320),
-    },
-  ],
-  'conv-7': [
-    {
-      id: 'msg-7-1',
-      conversation_id: 'conv-7',
-      sender_type: 'customer',
-      content: 'Hola! Quiero hacer otro pedido igual al anterior',
-      created_at: minutesAgo(2880),
-    },
-    {
-      id: 'msg-7-2',
-      conversation_id: 'conv-7',
-      sender_type: 'ai',
-      content: 'Hola Patricia! Veo que tu ultimo pedido fue de 50 unidades del modelo Deluxe. Quieres que repita ese mismo pedido?',
-      created_at: minutesAgo(2870),
-    },
-    {
-      id: 'msg-7-3',
-      conversation_id: 'conv-7',
-      sender_type: 'customer',
-      content: 'Si, exactamente el mismo. Y gracias por recordar mi pedido!',
-      created_at: minutesAgo(1450),
-    },
-    {
-      id: 'msg-7-4',
-      conversation_id: 'conv-7',
-      sender_type: 'agent',
-      content: 'Listo Patricia! Tu pedido ya esta registrado y se envia manana. Te llega en 3 dias.',
-      created_at: minutesAgo(1445),
-    },
-    {
-      id: 'msg-7-5',
-      conversation_id: 'conv-7',
-      sender_type: 'customer',
-      content: 'Excelente servicio, los recomendare con mis contactos',
-      created_at: minutesAgo(1440),
-    },
-  ],
-  'conv-8': [
-    {
-      id: 'msg-8-1',
-      conversation_id: 'conv-8',
-      sender_type: 'customer',
-      content: 'Hola! Necesito informacion sobre precios mayoristas',
-      created_at: minutesAgo(10),
-    },
-    {
-      id: 'msg-8-2',
-      conversation_id: 'conv-8',
-      sender_type: 'ai',
-      content: 'Hola! Gracias por tu interes. Nuestros precios mayoristas comienzan desde 50 unidades con un descuento del 15%. Que producto te interesa?',
-      created_at: minutesAgo(9),
-    },
-    {
-      id: 'msg-8-3',
-      conversation_id: 'conv-8',
-      sender_type: 'customer',
-      content: 'El modelo estandar. Tienen envio a Monterrey? Necesito 50 unidades',
-      created_at: minutesAgo(8),
     },
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Mock customers for new-conversation picker
-// ---------------------------------------------------------------------------
-
 const mockCustomerList: Customer[] = [
   { id: 'cust-1', team_id: 'team-1', name: 'Maria Garcia Lopez', email: 'maria@email.com', phone: '+52 55 1234 5678', channel: 'whatsapp', channel_id: '5215512345678', created_at: '', updated_at: '' },
   { id: 'cust-2', team_id: 'team-1', name: 'Roberto Hernandez', phone: '+52 33 9876 5432', channel: 'whatsapp', channel_id: '5213398765432', created_at: '', updated_at: '' },
-  { id: 'cust-4', team_id: 'team-1', name: 'Ana Sofia Ramirez', email: 'ana.ramirez@gmail.com', phone: '+52 81 5555 1234', channel: 'messenger', channel_id: 'fb_ana_ramirez', created_at: '', updated_at: '' },
-  { id: 'cust-6', team_id: 'team-1', name: 'Luis Fernando Torres', phone: '+52 55 8888 4321', channel: 'whatsapp', channel_id: '5215588884321', created_at: '', updated_at: '' },
-  { id: 'cust-7', team_id: 'team-1', name: 'Patricia Vega', email: 'patricia.vega@empresa.mx', channel: 'instagram', channel_id: 'ig_patriciavega', created_at: '', updated_at: '' },
-  { id: 'cust-9', team_id: 'team-1', name: 'Patricia Flores Olvera', email: 'patty.flores@live.com', phone: '+52 55 2233 4455', channel: 'instagram', channel_id: 'ig_pattyflores', created_at: '', updated_at: '' },
-  { id: 'cust-10', team_id: 'team-1', name: 'Carlos Hernández Ruiz', email: 'carlos.hdz@hotmail.com', phone: '+52 33 9876 5432', channel: 'instagram', channel_id: 'ig_carlosh', created_at: '', updated_at: '' },
 ];
+
+// ---------------------------------------------------------------------------
+// Channel options
+// ---------------------------------------------------------------------------
 
 const CHANNEL_OPTIONS: { value: ChannelType; label: string; icon: typeof MessageCircle }[] = [
   { value: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
@@ -429,13 +143,18 @@ type ViewMode = 'list' | 'canvas';
 
 export default function ConversationsPage() {
   const { isDemoMode } = useDemoStore();
+  const { profile } = useAuthStore();
+  const teamId = profile?.team_id;
+
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [conversations, setConversations] = useState<Conversation[]>(
-    isDemoMode ? mockConversations : []
-  );
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [, setMessagesLoading] = useState(false);
   const [chatModalOpen, setChatModalOpen] = useState(false);
   const [newConvModalOpen, setNewConvModalOpen] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // New conversation form state
   const [newConvSearch, setNewConvSearch] = useState('');
@@ -444,16 +163,157 @@ export default function ConversationsPage() {
   const [newConvMessage, setNewConvMessage] = useState('');
   const [newConvSending, setNewConvSending] = useState(false);
 
+  // ---------------------------------------------------------------------------
+  // Fetch real data from Supabase
+  // ---------------------------------------------------------------------------
+
+  const loadConversations = useCallback(async () => {
+    if (!isSupabaseConfigured || !teamId) {
+      if (isDemoMode) setConversations(mockConversations);
+      setDataLoaded(true);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*, customer:customers(*), assigned_profile:profiles(*)')
+        .eq('team_id', teamId)
+        .order('last_message_at', { ascending: false });
+      if (error) throw error;
+      setConversations((data as Conversation[]) ?? []);
+    } catch (err) {
+      console.error('Error loading conversations:', err);
+      if (isDemoMode) setConversations(mockConversations);
+    } finally {
+      setDataLoaded(true);
+    }
+  }, [teamId, isDemoMode]);
+
+  const loadCustomers = useCallback(async () => {
+    if (!isSupabaseConfigured || !teamId) {
+      if (isDemoMode) setCustomers(mockCustomerList);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('team_id', teamId)
+        .order('name');
+      if (error) throw error;
+      setCustomers((data as Customer[]) ?? []);
+    } catch (err) {
+      console.error('Error loading customers:', err);
+      if (isDemoMode) setCustomers(mockCustomerList);
+    }
+  }, [teamId, isDemoMode]);
+
+  const loadMessages = useCallback(async (conversationId: string) => {
+    if (!isSupabaseConfigured) {
+      if (isDemoMode) setMessages(mockMessages[conversationId] ?? []);
+      return;
+    }
+    setMessagesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setMessages((data as Message[]) ?? []);
+    } catch (err) {
+      console.error('Error loading messages:', err);
+      if (isDemoMode) setMessages(mockMessages[conversationId] ?? []);
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, [isDemoMode]);
+
+  // Initial data load
+  useEffect(() => {
+    if (!dataLoaded) {
+      loadConversations();
+      loadCustomers();
+    }
+  }, [loadConversations, loadCustomers, dataLoaded]);
+
+  // Load messages when active conversation changes
+  useEffect(() => {
+    if (activeConversationId) {
+      loadMessages(activeConversationId);
+    } else {
+      setMessages([]);
+    }
+  }, [activeConversationId, loadMessages]);
+
+  // Realtime subscription for new messages and conversation updates
+  useEffect(() => {
+    if (!isSupabaseConfigured || !teamId) return;
+
+    // Subscribe to new messages
+    const messagesChannel = supabase
+      .channel('messages-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const newMsg = payload.new as Message;
+          // If this message belongs to the active conversation, add it
+          if (newMsg.conversation_id === activeConversationId) {
+            setMessages((prev) => {
+              // Avoid duplicates
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+          }
+          // Refresh conversation list to update last_message
+          loadConversations();
+        }
+      )
+      .subscribe();
+
+    // Subscribe to conversation updates
+    const convsChannel = supabase
+      .channel('conversations-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `team_id=eq.${teamId}` },
+        () => {
+          loadConversations();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(convsChannel);
+    };
+  }, [teamId, activeConversationId, loadConversations]);
+
+  // ---------------------------------------------------------------------------
+  // Computed values
+  // ---------------------------------------------------------------------------
+
   const filteredCustomers = useMemo(() => {
     const q = newConvSearch.toLowerCase();
-    if (!q) return mockCustomerList;
-    return mockCustomerList.filter(
+    if (!q) return customers;
+    return customers.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.email?.toLowerCase().includes(q) ||
         c.phone?.includes(q)
     );
-  }, [newConvSearch]);
+  }, [newConvSearch, customers]);
+
+  const activeConversation = useMemo(
+    () => conversations.find((c) => c.id === activeConversationId) ?? null,
+    [conversations, activeConversationId]
+  );
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
 
   const handleOpenNewConv = () => {
     setNewConvSearch('');
@@ -463,13 +323,45 @@ export default function ConversationsPage() {
     setNewConvModalOpen(true);
   };
 
-  const handleSendNewConversation = (e: FormEvent) => {
+  const handleSendNewConversation = async (e: FormEvent) => {
     e.preventDefault();
     if (!newConvCustomer || !newConvChannel || !newConvMessage.trim()) return;
     setNewConvSending(true);
 
-    // Simulate creating conversation
-    setTimeout(() => {
+    if (isSupabaseConfigured && teamId) {
+      try {
+        // Create conversation in Supabase
+        const { data: newConv, error: convErr } = await supabase
+          .from('conversations')
+          .insert({
+            team_id: teamId,
+            customer_id: newConvCustomer.id,
+            channel: newConvChannel,
+            channel_contact_id: newConvCustomer.channel_id ?? newConvCustomer.id,
+            status: 'active' as ConversationStatus,
+            is_ai_enabled: false,
+            last_message: newConvMessage.trim(),
+            last_message_at: new Date().toISOString(),
+          })
+          .select('*, customer:customers(*), assigned_profile:profiles(*)')
+          .single();
+        if (convErr) throw convErr;
+
+        // Create first message
+        await supabase.from('messages').insert({
+          conversation_id: newConv.id,
+          sender_type: 'agent',
+          content: newConvMessage.trim(),
+        });
+
+        setConversations((prev) => [newConv as Conversation, ...prev]);
+        setActiveConversationId(newConv.id);
+        setNewConvModalOpen(false);
+      } catch (err) {
+        console.error('Error creating conversation:', err);
+      }
+    } else {
+      // Mock mode
       const newConv: Conversation = {
         id: `conv-new-${Date.now()}`,
         team_id: 'team-1',
@@ -484,31 +376,12 @@ export default function ConversationsPage() {
         unread_count: 0,
         created_at: new Date().toISOString(),
       };
-      mockMessages[newConv.id] = [
-        {
-          id: `msg-new-${Date.now()}`,
-          conversation_id: newConv.id,
-          sender_type: 'agent',
-          content: newConvMessage.trim(),
-          created_at: new Date().toISOString(),
-        },
-      ];
       setConversations((prev) => [newConv, ...prev]);
       setActiveConversationId(newConv.id);
       setNewConvModalOpen(false);
-      setNewConvSending(false);
-    }, 700);
+    }
+    setNewConvSending(false);
   };
-
-  const activeConversation = useMemo(
-    () => conversations.find((c) => c.id === activeConversationId) ?? null,
-    [conversations, activeConversationId]
-  );
-
-  const activeMessages = useMemo(
-    () => (activeConversationId ? mockMessages[activeConversationId] ?? [] : []),
-    [activeConversationId]
-  );
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -521,7 +394,10 @@ export default function ConversationsPage() {
   );
 
   const handleStatusChange = useCallback(
-    (id: string, newStatus: ConversationStatus) => {
+    async (id: string, newStatus: ConversationStatus) => {
+      if (isSupabaseConfigured) {
+        await supabase.from('conversations').update({ status: newStatus }).eq('id', id);
+      }
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, status: newStatus } : c))
       );
@@ -530,35 +406,74 @@ export default function ConversationsPage() {
   );
 
   const handleSendMessage = useCallback(
-    (content: string) => {
+    async (content: string) => {
       if (!activeConversationId) return;
-      const newMsg: Message = {
-        id: `msg-new-${Date.now()}`,
-        conversation_id: activeConversationId,
-        sender_type: 'agent',
-        content,
-        created_at: new Date().toISOString(),
-      };
-      // In a real app this would go through the store/API
-      if (!mockMessages[activeConversationId]) {
-        mockMessages[activeConversationId] = [];
+
+      if (isSupabaseConfigured) {
+        try {
+          const { data: newMsg, error } = await supabase
+            .from('messages')
+            .insert({
+              conversation_id: activeConversationId,
+              sender_type: 'agent',
+              content,
+            })
+            .select()
+            .single();
+          if (error) throw error;
+
+          setMessages((prev) => [...prev, newMsg as Message]);
+
+          // Update conversation's last message
+          await supabase
+            .from('conversations')
+            .update({
+              last_message: content,
+              last_message_at: new Date().toISOString(),
+            })
+            .eq('id', activeConversationId);
+
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === activeConversationId
+                ? { ...c, last_message: content, last_message_at: new Date().toISOString() }
+                : c
+            )
+          );
+        } catch (err) {
+          console.error('Error sending message:', err);
+        }
+      } else {
+        // Mock mode
+        const newMsg: Message = {
+          id: `msg-new-${Date.now()}`,
+          conversation_id: activeConversationId,
+          sender_type: 'agent',
+          content,
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, newMsg]);
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeConversationId
+              ? { ...c, last_message: content, last_message_at: newMsg.created_at }
+              : c
+          )
+        );
       }
-      mockMessages[activeConversationId].push(newMsg);
-      // Force re-render by updating conversations
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === activeConversationId
-            ? { ...c, last_message: content, last_message_at: newMsg.created_at }
-            : c
-        )
-      );
     },
     [activeConversationId]
   );
 
   const handleToggleAI = useCallback(
-    (enabled: boolean) => {
+    async (enabled: boolean) => {
       if (!activeConversationId) return;
+      if (isSupabaseConfigured) {
+        await supabase
+          .from('conversations')
+          .update({ is_ai_enabled: enabled })
+          .eq('id', activeConversationId);
+      }
       setConversations((prev) =>
         prev.map((c) =>
           c.id === activeConversationId ? { ...c, is_ai_enabled: enabled } : c
@@ -569,7 +484,6 @@ export default function ConversationsPage() {
   );
 
   const handleAssignVendor = useCallback(() => {
-    // Placeholder - would open a vendor assignment modal
     console.log('Assign vendor to conversation:', activeConversationId);
   }, [activeConversationId]);
 
@@ -649,7 +563,7 @@ export default function ConversationsPage() {
                 {activeConversation ? (
                   <ChatWindow
                     conversation={activeConversation}
-                    messages={activeMessages}
+                    messages={messages}
                     onSendMessage={handleSendMessage}
                     onToggleAI={handleToggleAI}
                     onAssignVendor={handleAssignVendor}
@@ -744,7 +658,7 @@ export default function ConversationsPage() {
             </div>
             {newConvCustomer && (
               <p className="text-xs text-primary-600 font-medium">
-                ✓ {newConvCustomer.name} seleccionado
+                {newConvCustomer.name} seleccionado
               </p>
             )}
           </div>
@@ -829,7 +743,7 @@ export default function ConversationsPage() {
           <div className="h-[60vh] -mx-6 -mb-4">
             <ChatWindow
               conversation={activeConversation}
-              messages={activeMessages}
+              messages={messages}
               onSendMessage={handleSendMessage}
               onToggleAI={handleToggleAI}
               onAssignVendor={handleAssignVendor}

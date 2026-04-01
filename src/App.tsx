@@ -100,6 +100,7 @@ import ConversationsPage from '@/pages/ConversationsPage';
 import CustomersPage from '@/pages/CustomersPage';
 import TeamPage from '@/pages/TeamPage';
 import SettingsPage from '@/pages/SettingsPage';
+import KnowledgeBasesPage from '@/pages/KnowledgeBasesPage';
 import AuthCallbackPage from '@/pages/AuthCallbackPage';
 
 /**
@@ -198,6 +199,7 @@ function AnimatedRoutes() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="conversations" element={<ConversationsPage />} />
           <Route path="customers" element={<CustomersPage />} />
+          <Route path="knowledge-bases" element={<KnowledgeBasesPage />} />
           <Route path="team" element={<TeamPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
