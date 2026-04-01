@@ -257,44 +257,33 @@ async function getKnowledgeContext(teamId: string, userMessage: string): Promise
     colsByKb[col.knowledge_base_id]!.push(col);
   }
 
-  // Extract keywords from user message for pre-filtering (words > 3 chars)
-  const stopwords = new Set(['para', 'como', 'este', 'esta', 'esos', 'esas', 'tiene', 'tiene', 'están', 'están', 'puede', 'sobre', 'desde', 'hasta', 'donde', 'cuando', 'cuanto', 'cuánto', 'porque', 'todo', 'toda', 'todos', 'todas', 'cual', 'cuál', 'quiero', 'necesito', 'hola', 'buenas', 'buenos', 'gracias', 'favor', 'with', 'that', 'this', 'from', 'have', 'what', 'your', 'which']);
+  // Extract keywords from user message for pre-filtering (words > 2 chars)
+  const stopwords = new Set(['para', 'como', 'este', 'esta', 'esos', 'esas', 'tiene', 'están', 'puede', 'sobre', 'desde', 'hasta', 'donde', 'cuando', 'cuanto', 'cuánto', 'porque', 'todo', 'toda', 'todos', 'todas', 'cual', 'cuál', 'quiero', 'necesito', 'hola', 'buenas', 'buenos', 'gracias', 'favor', 'with', 'that', 'this', 'from', 'have', 'what', 'your', 'which', 'una', 'uno', 'unos', 'unas', 'los', 'las', 'del', 'por', 'que', 'más', 'mas', 'hay', 'son', 'con']);
   const keywords = userMessage
     .toLowerCase()
-    .replace(/[^\w\sáéíóúñü]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // remove accents for matching
+    .replace(/[^a-z0-9\s]/g, '')
     .split(/\s+/)
-    .filter((w) => w.length > 3 && !stopwords.has(w));
+    .filter((w) => w.length > 2 && !stopwords.has(w));
 
-  // Fetch rows per KB, filtered by user message keywords
+  // Search rows via Postgres RPC — filtering happens in the DB, not client-side
   const rowsByKb: Record<string, { row_data: Record<string, unknown> }[]> = {};
   const MAX_ROWS_PER_KB = 10;
 
-  for (const kb of knowledgeBases) {
-    // Fetch a batch of rows to filter from (larger pool if we have keywords)
-    const fetchLimit = keywords.length > 0 ? 100 : MAX_ROWS_PER_KB;
-    const { data: rows } = await supabase
-      .from('knowledge_rows')
-      .select('row_data')
-      .eq('knowledge_base_id', kb.id)
-      .limit(fetchLimit);
+  if (keywords.length > 0) {
+    const { data: matchedRows } = await supabase.rpc('search_knowledge_rows', {
+      kb_ids: kbIds,
+      search_keywords: keywords,
+      max_per_kb: MAX_ROWS_PER_KB,
+    });
 
-    if (!rows?.length) continue;
-
-    if (keywords.length > 0) {
-      // Client-side keyword filter: keep rows where any value matches any keyword
-      const filtered = rows.filter((r) => {
-        const text = JSON.stringify(r.row_data).toLowerCase();
-        return keywords.some((kw) => text.includes(kw));
-      });
-      // Only include rows that actually matched — no fallback to irrelevant data
-      if (filtered.length > 0) {
-        rowsByKb[kb.id] = filtered.slice(0, MAX_ROWS_PER_KB);
-      }
-    } else {
-      // No keywords extracted (short message like "hola") — skip data rows
-      // Schema/columns are still sent so the AI knows what info is available
+    for (const row of matchedRows ?? []) {
+      if (!rowsByKb[row.knowledge_base_id]) rowsByKb[row.knowledge_base_id] = [];
+      rowsByKb[row.knowledge_base_id]!.push(row);
     }
   }
+  // When no keywords (short messages like "hola"), no rows are sent —
+  // the schema/columns are still included so the AI knows what info is available
 
   // Build output in compact CSV format with only relevant columns
   const sections: string[] = [];
