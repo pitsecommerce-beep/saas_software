@@ -79,14 +79,30 @@ async function callAnthropic(
   messages: { role: 'user' | 'assistant'; content: string }[]
 ): Promise<string | null> {
   const client = new Anthropic({ apiKey });
-  const response = await client.messages.create({
-    model,
-    system: systemPrompt,
-    messages,
-    max_tokens: 1024,
-  });
-  const textBlock = response.content.find((b) => b.type === 'text');
-  return textBlock ? textBlock.text : null;
+  const MAX_RETRIES = 3;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const response = await client.messages.create({
+        model,
+        system: systemPrompt,
+        messages,
+        max_tokens: 1024,
+      });
+      const textBlock = response.content.find((b) => b.type === 'text');
+      return textBlock ? textBlock.text : null;
+    } catch (err: any) {
+      const isOverloaded = err?.status === 529 || err?.error?.type === 'overloaded_error';
+      if (isOverloaded && attempt < MAX_RETRIES - 1) {
+        const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s
+        console.warn(`Anthropic overloaded, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  return null;
 }
 
 async function callGoogle(
