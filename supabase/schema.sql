@@ -134,6 +134,15 @@ CREATE TABLE knowledge_columns (
 );
 
 -- ============================================
+-- KNOWLEDGE ROWS (stores actual Excel data)
+-- ============================================
+CREATE TABLE knowledge_rows (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  knowledge_base_id UUID NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+  row_data JSONB NOT NULL
+);
+
+-- ============================================
 -- TEAM INVITATIONS
 -- ============================================
 CREATE TABLE team_invitations (
@@ -257,6 +266,7 @@ ALTER TABLE ai_agents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE channel_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge_bases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge_columns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE knowledge_rows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vehicles ENABLE ROW LEVEL SECURITY;
@@ -451,6 +461,24 @@ CREATE POLICY "Gerente can manage knowledge columns" ON knowledge_columns
   );
 
 -- ============================================
+-- KNOWLEDGE ROWS POLICIES
+-- ============================================
+
+CREATE POLICY "Users can view knowledge rows" ON knowledge_rows
+  FOR SELECT USING (
+    knowledge_base_id IN (
+      SELECT id FROM knowledge_bases WHERE team_id = get_my_team_id()
+    )
+  );
+
+CREATE POLICY "Gerente can manage knowledge rows" ON knowledge_rows
+  FOR ALL USING (
+    knowledge_base_id IN (
+      SELECT id FROM knowledge_bases WHERE team_id = get_my_team_id()
+    )
+  );
+
+-- ============================================
 -- TEAM INVITATIONS POLICIES
 -- ============================================
 
@@ -617,6 +645,7 @@ CREATE INDEX idx_messages_created_at ON messages(created_at);
 CREATE INDEX idx_ai_agents_team_id ON ai_agents(team_id);
 CREATE INDEX idx_channel_assignments_team_id ON channel_assignments(team_id);
 CREATE INDEX idx_knowledge_bases_team_id ON knowledge_bases(team_id);
+CREATE INDEX idx_knowledge_rows_kb_id ON knowledge_rows(knowledge_base_id);
 CREATE INDEX idx_orders_team_id ON orders(team_id);
 CREATE INDEX idx_orders_customer_id ON orders(customer_id);
 CREATE INDEX idx_inventory_product_id ON inventory(product_id);

@@ -191,6 +191,23 @@ export default function KnowledgeBasesPage() {
           .select();
         if (colErr) throw colErr;
 
+        // 3. Insert actual row data in batches
+        if (payload.data.length > 0) {
+          const BATCH_SIZE = 500;
+          for (let i = 0; i < payload.data.length; i += BATCH_SIZE) {
+            const batch = payload.data.slice(i, i + BATCH_SIZE).map((row) => ({
+              knowledge_base_id: kb.id,
+              row_data: row,
+            }));
+            const { error: rowErr } = await supabase
+              .from('knowledge_rows')
+              .insert(batch);
+            if (rowErr) {
+              console.error('Error inserting knowledge rows batch:', rowErr);
+            }
+          }
+        }
+
         const newKb: KnowledgeBaseWithColumns = {
           ...(kb as KnowledgeBase),
           columns: (insertedCols as KnowledgeColumn[]) ?? [],

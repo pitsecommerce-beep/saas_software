@@ -79,14 +79,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if ((useAuthStore as unknown as { _initialized?: boolean })._initialized) return;
     (useAuthStore as unknown as { _initialized?: boolean })._initialized = true;
 
-    // Safety net: force exit loading after 40 seconds to avoid infinite loading
-    // screen.  Allows enough time for retry attempts (3 × 10s + delays).
+    // Safety net: force exit loading after 20 seconds to avoid infinite loading screen.
     const safetyTimeout = setTimeout(() => {
       if (get().loading) {
         console.warn('Auth initialization timed out — redirecting to login');
         set({ user: null, profile: null, team: null, loading: false, profileFetchFailed: false });
       }
-    }, 40000);
+    }, 20000);
 
     supabase.auth.onAuthStateChange(async (event, session) => {
       try {
@@ -102,7 +101,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !isOAuthCallback) {
             // Wrap fetches in a race against a per-operation timeout so a
             // hanging request doesn't block the app forever.
-            const withTimeout = <T>(p: Promise<T>, ms = 15000): Promise<T> =>
+            const withTimeout = <T>(p: Promise<T>, ms = 8000): Promise<T> =>
               Promise.race([
                 p,
                 new Promise<T>((_, reject) =>
@@ -110,10 +109,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 ),
               ]);
 
-            // Retry logic: attempt up to 3 times before giving up, to
+            // Retry logic: attempt up to 2 times before giving up, to
             // tolerate transient network issues and avoid logging the
             // user out unnecessarily.
-            const maxRetries = 3;
+            const maxRetries = 2;
             let lastErr: unknown;
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
               try {

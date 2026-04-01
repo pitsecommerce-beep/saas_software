@@ -236,15 +236,60 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
 async function getKnowledgeContext(teamId: string): Promise<string> {
   const { data: knowledgeBases } = await supabase
     .from('knowledge_bases')
-    .select('name, description')
+    .select('id, name, description')
     .eq('team_id', teamId)
     .eq('is_queryable', true);
 
   if (!knowledgeBases?.length) return '';
 
-  return knowledgeBases
-    .map((kb) => `[${kb.name}]: ${kb.description ?? 'Sin descripción'}`)
-    .join('\n');
+  const kbIds = knowledgeBases.map((kb) => kb.id);
+
+  // Fetch column descriptions so the AI knows the schema
+  const { data: columns } = await supabase
+    .from('knowledge_columns')
+    .select('knowledge_base_id, column_name, description, data_type')
+    .in('knowledge_base_id', kbIds);
+
+  // Fetch actual row data (limit to avoid exceeding token limits)
+  const { data: rows } = await supabase
+    .from('knowledge_rows')
+    .select('knowledge_base_id, row_data')
+    .in('knowledge_base_id', kbIds)
+    .limit(200);
+
+  // Group columns and rows by knowledge base
+  const colsByKb: Record<string, typeof columns> = {};
+  const rowsByKb: Record<string, typeof rows> = {};
+  for (const col of columns ?? []) {
+    if (!colsByKb[col.knowledge_base_id]) colsByKb[col.knowledge_base_id] = [];
+    colsByKb[col.knowledge_base_id]!.push(col);
+  }
+  for (const row of rows ?? []) {
+    if (!rowsByKb[row.knowledge_base_id]) rowsByKb[row.knowledge_base_id] = [];
+    rowsByKb[row.knowledge_base_id]!.push(row);
+  }
+
+  const sections: string[] = [];
+  for (const kb of knowledgeBases) {
+    let section = `[${kb.name}]: ${kb.description ?? 'Sin descripción'}`;
+
+    // Add column schema
+    const kbCols = colsByKb[kb.id];
+    if (kbCols?.length) {
+      section += '\nColumnas: ' + kbCols.map((c) => `${c.column_name} (${c.description})`).join(', ');
+    }
+
+    // Add actual data rows
+    const kbRows = rowsByKb[kb.id];
+    if (kbRows?.length) {
+      section += '\nDatos:\n';
+      section += kbRows.map((r) => JSON.stringify(r.row_data)).join('\n');
+    }
+
+    sections.push(section);
+  }
+
+  return sections.join('\n\n');
 }
 
 async function sendYCloudMessage(from: string, to: string, text: string): Promise<void> {
