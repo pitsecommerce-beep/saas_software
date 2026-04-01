@@ -73,13 +73,17 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     return;
   }
 
-  console.log(`Incoming message from ${senderPhone} to ${recipientPhone}: ${messageText}`);
+  console.log(`\n========== INCOMING MESSAGE ==========`);
+  console.log(`From: ${senderPhone} → To: ${recipientPhone}`);
+  console.log(`Text: "${messageText}"`);
+  console.log(`Timestamp: ${new Date().toISOString()}`);
 
   // 1. Find which team/agent handles this phone number
   // Try exact match first, then try with/without '+' prefix
   const recipientWithPlus = recipientPhone.startsWith('+') ? recipientPhone : `+${recipientPhone}`;
   const recipientWithoutPlus = recipientPhone.replace(/^\+/, '');
 
+  console.log(`\n[QUERY] channel_assignments — searching for phone: ${recipientPhone}, ${recipientWithPlus}, ${recipientWithoutPlus}`);
   const { data: assignments, error: assignErr } = await supabase
     .from('channel_assignments')
     .select('*, agent:ai_agents(*)')
@@ -87,25 +91,29 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .in('channel_identifier', [recipientPhone, recipientWithPlus, recipientWithoutPlus]);
 
   if (assignErr) {
-    console.error('DB error looking up assignment:', assignErr.message);
+    console.error('[QUERY RESULT] channel_assignments — ERROR:', assignErr.message);
     return;
   }
+  console.log(`[QUERY RESULT] channel_assignments — ${assignments?.length ?? 0} result(s) found`);
 
   const assignment = assignments?.[0];
   if (!assignment) {
-    console.warn(`No agent assigned to phone ${recipientPhone} (searched: ${recipientPhone}, ${recipientWithPlus}, ${recipientWithoutPlus})`);
+    console.warn(`[QUERY RESULT] No agent assigned to phone ${recipientPhone}`);
     return;
   }
 
   const agent = assignment.agent;
   if (!agent || !agent.is_active) {
-    console.warn(`Agent ${assignment.agent_id} is inactive or not found`);
+    console.warn(`[QUERY RESULT] Agent ${assignment.agent_id} is inactive or not found`);
     return;
   }
 
+  console.log(`[AGENT] ID: ${agent.id}, Name: "${agent.name}", Provider: ${agent.provider}, Model: ${agent.model}`);
   const teamId = assignment.team_id;
+  console.log(`[TEAM] ID: ${teamId}`);
 
   // 2. Find or create customer
+  console.log(`\n[QUERY] customers — searching for phone: ${senderPhone}, team: ${teamId}`);
   let { data: customer } = await supabase
     .from('customers')
     .select('id')
@@ -115,6 +123,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .single();
 
   if (!customer) {
+    console.log(`[QUERY RESULT] customers — not found, creating new customer`);
     const { data: newCustomer, error: custErr } = await supabase
       .from('customers')
       .insert({
@@ -127,13 +136,17 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
       .select('id')
       .single();
     if (custErr) {
-      console.error('Error creating customer:', custErr.message);
+      console.error('[QUERY RESULT] customers INSERT — ERROR:', custErr.message);
       return;
     }
     customer = newCustomer;
+    console.log(`[QUERY RESULT] customers — created with ID: ${customer!.id}`);
+  } else {
+    console.log(`[QUERY RESULT] customers — found existing, ID: ${customer.id}`);
   }
 
   // 3. Find or create conversation
+  console.log(`\n[QUERY] conversations — searching active/pending for phone: ${senderPhone}`);
   let { data: conversation } = await supabase
     .from('conversations')
     .select('id, is_ai_enabled')
@@ -146,6 +159,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .single();
 
   if (!conversation) {
+    console.log(`[QUERY RESULT] conversations — not found, creating new conversation`);
     const { data: newConv, error: convErr } = await supabase
       .from('conversations')
       .insert({
@@ -161,22 +175,27 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
       .select('id, is_ai_enabled')
       .single();
     if (convErr) {
-      console.error('Error creating conversation:', convErr.message);
+      console.error('[QUERY RESULT] conversations INSERT — ERROR:', convErr.message);
       return;
     }
     conversation = newConv;
+    console.log(`[QUERY RESULT] conversations — created, ID: ${conversation!.id}, AI enabled: ${conversation!.is_ai_enabled}`);
+  } else {
+    console.log(`[QUERY RESULT] conversations — found existing, ID: ${conversation.id}, AI enabled: ${conversation.is_ai_enabled}`);
   }
 
   // 4. Save the inbound message
-  await supabase.from('messages').insert({
+  console.log(`\n[QUERY] messages INSERT — saving customer message to conversation ${conversation.id}`);
+  const { error: msgInsertErr } = await supabase.from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'customer',
     content: messageText,
     metadata: { ycloud_message_id: msg.id, phone: senderPhone },
   });
+  console.log(`[QUERY RESULT] messages INSERT — ${msgInsertErr ? 'ERROR: ' + msgInsertErr.message : 'OK'}`);
 
   // Update conversation last_message
-  await supabase
+  const { error: convUpdateErr } = await supabase
     .from('conversations')
     .update({
       last_message: messageText,
@@ -184,71 +203,103 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
       unread_count: 1,
     })
     .eq('id', conversation.id);
+  console.log(`[QUERY RESULT] conversations UPDATE — ${convUpdateErr ? 'ERROR: ' + convUpdateErr.message : 'OK'}`);
 
   // 5. If AI is enabled, generate and send a response
   if (!conversation.is_ai_enabled) {
-    console.log('AI disabled for this conversation, skipping auto-reply');
+    console.log('\n[SKIP] AI disabled for this conversation, skipping auto-reply');
     return;
   }
 
   // Fetch recent messages for context
+  console.log(`\n[QUERY] messages SELECT — fetching recent messages for conversation ${conversation.id}`);
   const { data: recentMessages } = await supabase
     .from('messages')
     .select('sender_type, content, created_at')
     .eq('conversation_id', conversation.id)
     .order('created_at', { ascending: true })
     .limit(20);
+  console.log(`[QUERY RESULT] messages SELECT — ${recentMessages?.length ?? 0} messages in history`);
 
   // Fetch knowledge base context if available (filtered by user message)
+  console.log(`\n[KNOWLEDGE] Fetching knowledge context for team ${teamId}...`);
   const knowledgeContext = await getKnowledgeContext(teamId, messageText);
+  console.log(`[KNOWLEDGE] Context length: ${knowledgeContext.length} chars`);
+  if (knowledgeContext) {
+    console.log(`[KNOWLEDGE] Context preview:\n${knowledgeContext.substring(0, 500)}${knowledgeContext.length > 500 ? '\n... (truncated)' : ''}`);
+  } else {
+    console.log(`[KNOWLEDGE] No knowledge context available (no queryable knowledge bases or no matching rows)`);
+  }
 
   // Get AI response
+  console.log(`\n[AI] Calling ${agent.provider}/${agent.model} for response...`);
   const aiResponse = await getAIResponse(agent, recentMessages ?? [], knowledgeContext);
 
   if (!aiResponse) {
-    console.warn('AI returned empty response');
+    console.warn('[AI] Agent returned EMPTY response');
     return;
   }
+  console.log(`[AI] Response received (${aiResponse.length} chars):`);
+  console.log(`[AI] "${aiResponse.substring(0, 300)}${aiResponse.length > 300 ? '...' : ''}"`);
 
   // 6. Save AI response as message
-  await supabase.from('messages').insert({
+  console.log(`\n[QUERY] messages INSERT — saving AI response`);
+  const { error: aiMsgErr } = await supabase.from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'ai',
     content: aiResponse,
     metadata: { agent_id: agent.id, agent_name: agent.name },
   });
+  console.log(`[QUERY RESULT] messages INSERT (AI) — ${aiMsgErr ? 'ERROR: ' + aiMsgErr.message : 'OK'}`);
 
   // 7. Send response via YCloud API
+  console.log(`\n[YCLOUD] Sending message to ${senderPhone}...`);
   await sendYCloudMessage(recipientPhone, senderPhone, aiResponse);
 
   // Update conversation
-  await supabase
+  const { error: finalUpdateErr } = await supabase
     .from('conversations')
     .update({
       last_message: aiResponse,
       last_message_at: new Date().toISOString(),
     })
     .eq('id', conversation.id);
+  console.log(`[QUERY RESULT] conversations final UPDATE — ${finalUpdateErr ? 'ERROR: ' + finalUpdateErr.message : 'OK'}`);
 
-  console.log(`Replied to ${senderPhone} via agent "${agent.name}"`);
+  console.log(`\n========== REPLY SENT to ${senderPhone} via "${agent.name}" ==========\n`);
 }
 
 async function getKnowledgeContext(teamId: string, userMessage: string): Promise<string> {
-  const { data: knowledgeBases } = await supabase
+  console.log(`  [KB QUERY] knowledge_bases — searching queryable KBs for team ${teamId}`);
+  const { data: knowledgeBases, error: kbErr } = await supabase
     .from('knowledge_bases')
     .select('id, name, description')
     .eq('team_id', teamId)
     .eq('is_queryable', true);
 
-  if (!knowledgeBases?.length) return '';
+  if (kbErr) {
+    console.error(`  [KB QUERY RESULT] knowledge_bases — ERROR: ${kbErr.message}`);
+  }
+
+  if (!knowledgeBases?.length) {
+    console.log(`  [KB QUERY RESULT] knowledge_bases — 0 queryable KBs found`);
+    return '';
+  }
+  console.log(`  [KB QUERY RESULT] knowledge_bases — ${knowledgeBases.length} KB(s) found: ${knowledgeBases.map(kb => `"${kb.name}" (${kb.id})`).join(', ')}`);
 
   const kbIds = knowledgeBases.map((kb) => kb.id);
 
   // Fetch column descriptions so the AI knows the schema
-  const { data: columns } = await supabase
+  console.log(`  [KB QUERY] knowledge_columns — fetching columns for ${kbIds.length} KB(s)`);
+  const { data: columns, error: colErr } = await supabase
     .from('knowledge_columns')
     .select('knowledge_base_id, column_name, description, data_type')
     .in('knowledge_base_id', kbIds);
+  if (colErr) {
+    console.error(`  [KB QUERY RESULT] knowledge_columns — ERROR: ${colErr.message}`);
+  } else {
+    console.log(`  [KB QUERY RESULT] knowledge_columns — ${columns?.length ?? 0} column(s) found`);
+  }
 
   // Group columns by knowledge base
   const colsByKb: Record<string, typeof columns> = {};
@@ -265,22 +316,35 @@ async function getKnowledgeContext(teamId: string, userMessage: string): Promise
     .replace(/[^a-z0-9\s]/g, '')
     .split(/\s+/)
     .filter((w) => w.length > 2 && !stopwords.has(w));
+  console.log(`  [KB SEARCH] Keywords extracted from message: [${keywords.join(', ')}] (${keywords.length} keywords)`);
 
   // Search rows via Postgres RPC — filtering happens in the DB, not client-side
   const rowsByKb: Record<string, { row_data: Record<string, unknown> }[]> = {};
   const MAX_ROWS_PER_KB = 10;
 
   if (keywords.length > 0) {
-    const { data: matchedRows } = await supabase.rpc('search_knowledge_rows', {
+    console.log(`  [KB QUERY] search_knowledge_rows RPC — searching with keywords: [${keywords.join(', ')}], max ${MAX_ROWS_PER_KB} per KB`);
+    const { data: matchedRows, error: rpcErr } = await supabase.rpc('search_knowledge_rows', {
       kb_ids: kbIds,
       search_keywords: keywords,
       max_per_kb: MAX_ROWS_PER_KB,
     });
 
+    if (rpcErr) {
+      console.error(`  [KB QUERY RESULT] search_knowledge_rows — ERROR: ${rpcErr.message}`);
+    } else {
+      console.log(`  [KB QUERY RESULT] search_knowledge_rows — ${matchedRows?.length ?? 0} row(s) matched`);
+      if (matchedRows?.length) {
+        console.log(`  [KB QUERY RESULT] First matched row preview: ${JSON.stringify(matchedRows[0].row_data).substring(0, 200)}`);
+      }
+    }
+
     for (const row of matchedRows ?? []) {
       if (!rowsByKb[row.knowledge_base_id]) rowsByKb[row.knowledge_base_id] = [];
       rowsByKb[row.knowledge_base_id]!.push(row);
     }
+  } else {
+    console.log(`  [KB SEARCH] No keywords extracted — skipping row search (only schema will be sent to AI)`);
   }
   // When no keywords (short messages like "hola"), no rows are sent —
   // the schema/columns are still included so the AI knows what info is available
