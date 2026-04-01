@@ -286,10 +286,13 @@ async function getKnowledgeContext(teamId: string, userMessage: string): Promise
         const text = JSON.stringify(r.row_data).toLowerCase();
         return keywords.some((kw) => text.includes(kw));
       });
-      // Use filtered results, or fall back to first N rows if no matches
-      rowsByKb[kb.id] = (filtered.length > 0 ? filtered : rows).slice(0, MAX_ROWS_PER_KB);
+      // Only include rows that actually matched — no fallback to irrelevant data
+      if (filtered.length > 0) {
+        rowsByKb[kb.id] = filtered.slice(0, MAX_ROWS_PER_KB);
+      }
     } else {
-      rowsByKb[kb.id] = rows.slice(0, MAX_ROWS_PER_KB);
+      // No keywords extracted (short message like "hola") — skip data rows
+      // Schema/columns are still sent so the AI knows what info is available
     }
   }
 
