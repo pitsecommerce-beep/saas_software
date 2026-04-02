@@ -197,13 +197,21 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .select('sender_type, content, created_at')
     .eq('conversation_id', conversation.id)
     .order('created_at', { ascending: true })
-    .limit(20);
+    .limit(10);
 
-  // Fetch knowledge base context if available
-  const knowledgeContext = await getKnowledgeContext(teamId);
+  // Fetch knowledge schema and search for relevant rows
+  const knowledgeSchema = await getKnowledgeSchema(teamId);
+  const searchResults = await searchKnowledgeRows(teamId, messageText, 15);
+
+  let contextForAI = knowledgeSchema;
+  if (searchResults) {
+    contextForAI += '\n\n--- Resultados encontrados para esta consulta ---\n' + searchResults;
+  } else if (knowledgeSchema) {
+    contextForAI += '\n\n(No se encontraron productos específicos para esta consulta. Informa al cliente que puede proporcionar más detalles como marca, modelo o tipo de pieza.)';
+  }
 
   // Get AI response
-  const aiResponse = await getAIResponse(agent, recentMessages ?? [], knowledgeContext);
+  const aiResponse = await getAIResponse(agent, recentMessages ?? [], contextForAI);
 
   if (!aiResponse) {
     console.warn('AI returned empty response');
@@ -233,7 +241,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   console.log(`Replied to ${senderPhone} via agent "${agent.name}"`);
 }
 
-async function getKnowledgeContext(teamId: string): Promise<string> {
+async function getKnowledgeSchema(teamId: string): Promise<string> {
   const { data: knowledgeBases } = await supabase
     .from('knowledge_bases')
     .select('id, name, description')
@@ -243,49 +251,69 @@ async function getKnowledgeContext(teamId: string): Promise<string> {
   if (!knowledgeBases?.length) return '';
 
   const kbIds = knowledgeBases.map((kb) => kb.id);
-
-  // Fetch column descriptions so the AI knows the schema
   const { data: columns } = await supabase
     .from('knowledge_columns')
     .select('knowledge_base_id, column_name, description, data_type')
     .in('knowledge_base_id', kbIds);
 
-  // Fetch actual row data (limit to avoid exceeding token limits)
-  const { data: rows } = await supabase
-    .from('knowledge_rows')
-    .select('knowledge_base_id, row_data')
-    .in('knowledge_base_id', kbIds)
-    .limit(200);
-
-  // Group columns and rows by knowledge base
-  const colsByKb: Record<string, typeof columns> = {};
-  const rowsByKb: Record<string, typeof rows> = {};
-  for (const col of columns ?? []) {
-    if (!colsByKb[col.knowledge_base_id]) colsByKb[col.knowledge_base_id] = [];
-    colsByKb[col.knowledge_base_id]!.push(col);
+  const sections: string[] = [];
+  for (const kb of knowledgeBases) {
+    const kbCols = (columns ?? []).filter((c) => c.knowledge_base_id === kb.id);
+    let section = `Base de datos "${kb.name}": ${kb.description ?? 'Sin descripción'}`;
+    if (kbCols.length) {
+      section += '\nColumnas disponibles: ' + kbCols.map((c) => `${c.column_name} (${c.description})`).join(', ');
+    }
+    sections.push(section);
   }
-  for (const row of rows ?? []) {
-    if (!rowsByKb[row.knowledge_base_id]) rowsByKb[row.knowledge_base_id] = [];
-    rowsByKb[row.knowledge_base_id]!.push(row);
+  return sections.join('\n\n');
+}
+
+async function searchKnowledgeRows(
+  teamId: string,
+  query: string,
+  maxResults: number = 15
+): Promise<string> {
+  if (!query || query.trim().length < 2) return '';
+
+  const { data: results, error } = await supabase
+    .rpc('search_knowledge', {
+      p_team_id: teamId,
+      p_query: query,
+      p_limit: maxResults,
+    });
+
+  let rows = results;
+
+  if ((!rows || rows.length === 0) && !error) {
+    const { data: fallbackResults } = await supabase
+      .rpc('search_knowledge_fallback', {
+        p_team_id: teamId,
+        p_query: query,
+        p_limit: maxResults,
+      });
+    rows = fallbackResults;
+  }
+
+  if (!rows || rows.length === 0) return '';
+
+  const grouped: Record<string, { name: string; rows: Record<string, unknown>[] }> = {};
+  for (const row of rows) {
+    const kbId = row.knowledge_base_id;
+    if (!grouped[kbId]) {
+      grouped[kbId] = { name: row.knowledge_base_name, rows: [] };
+    }
+    grouped[kbId].rows.push(row.row_data);
   }
 
   const sections: string[] = [];
-  for (const kb of knowledgeBases) {
-    let section = `[${kb.name}]: ${kb.description ?? 'Sin descripción'}`;
-
-    // Add column schema
-    const kbCols = colsByKb[kb.id];
-    if (kbCols?.length) {
-      section += '\nColumnas: ' + kbCols.map((c) => `${c.column_name} (${c.description})`).join(', ');
-    }
-
-    // Add actual data rows
-    const kbRows = rowsByKb[kb.id];
-    if (kbRows?.length) {
-      section += '\nDatos:\n';
-      section += kbRows.map((r) => JSON.stringify(r.row_data)).join('\n');
-    }
-
+  for (const [, group] of Object.entries(grouped)) {
+    if (group.rows.length === 0) continue;
+    const headers = Object.keys(group.rows[0]);
+    let section = `[${group.name}] (${group.rows.length} resultados):\n`;
+    section += headers.join(' | ') + '\n';
+    section += group.rows
+      .map((r) => headers.map((h) => String(r[h] ?? '')).join(' | '))
+      .join('\n');
     sections.push(section);
   }
 

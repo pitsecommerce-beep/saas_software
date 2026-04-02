@@ -2,15 +2,7 @@ import { create } from 'zustand';
 import type { User } from '@supabase/supabase-js';
 import type { Profile, Team } from '@/types';
 import { supabase } from '@/lib/supabase';
-
-const isSupabaseConfigured = Boolean(
-  import.meta.env.VITE_SUPABASE_URL &&
-  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') &&
-  !import.meta.env.VITE_SUPABASE_URL.includes('your-project') &&
-  import.meta.env.VITE_SUPABASE_ANON_KEY &&
-  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('placeholder') &&
-  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('your-anon-key')
-);
+import { isSupabaseConfigured } from '@/lib/config';
 
 const mockProfile: Profile = {
   id: 'mock-user-1',
@@ -79,13 +71,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if ((useAuthStore as unknown as { _initialized?: boolean })._initialized) return;
     (useAuthStore as unknown as { _initialized?: boolean })._initialized = true;
 
-    // Safety net: force exit loading after 20 seconds to avoid infinite loading screen.
+    // Safety net: force exit loading after 8 seconds to avoid infinite loading screen.
     const safetyTimeout = setTimeout(() => {
       if (get().loading) {
         console.warn('Auth initialization timed out — redirecting to login');
         set({ user: null, profile: null, team: null, loading: false, profileFetchFailed: false });
       }
-    }, 20000);
+    }, 8000);
 
     supabase.auth.onAuthStateChange(async (event, session) => {
       try {
@@ -101,7 +93,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && !isOAuthCallback) {
             // Wrap fetches in a race against a per-operation timeout so a
             // hanging request doesn't block the app forever.
-            const withTimeout = <T>(p: Promise<T>, ms = 8000): Promise<T> =>
+            const withTimeout = <T>(p: Promise<T>, ms = 5000): Promise<T> =>
               Promise.race([
                 p,
                 new Promise<T>((_, reject) =>
@@ -109,10 +101,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 ),
               ]);
 
-            // Retry logic: attempt up to 2 times before giving up, to
-            // tolerate transient network issues and avoid logging the
-            // user out unnecessarily.
-            const maxRetries = 2;
+            // Single attempt — no retries to avoid delaying app load.
+            const maxRetries = 1;
             let lastErr: unknown;
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
               try {
@@ -132,15 +122,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   lastErr = null;
                   break;
                 }
-                if (attempt < maxRetries) {
-                  // Wait before retrying with exponential backoff (1s, 2s).
-                  await new Promise((r) => setTimeout(r, attempt * 1000));
-                }
               }
             }
 
             if (lastErr) {
-              console.warn('Profile/team fetch failed after all retries:', lastErr);
+              console.warn('Profile/team fetch failed:', lastErr);
               // Mark as fetch failure so ProtectedRoute doesn't wrongly
               // redirect to onboarding when the real problem is a server error.
               set({ profileFetchFailed: true });
@@ -151,7 +137,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       } catch (err) {
         console.error('Auth state change error:', err);
-        set({ user: null, profile: null, team: null, profileFetchFailed: false });
+        set({ user: null, profile: null, team: null, loading: false, profileFetchFailed: false });
       } finally {
         clearTimeout(safetyTimeout);
         set({ loading: false });
@@ -318,15 +304,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchProfile: async () => {
-    const { user } = get();
-    if (!user) return;
-
-    if (!isSupabaseConfigured) {
-      set({ profile: mockProfile });
-      return;
-    }
-
     try {
+      const { user } = get();
+      if (!user) return;
+
+      if (!isSupabaseConfigured) {
+        set({ profile: mockProfile });
+        return;
+      }
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -334,33 +320,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .single();
 
       if (error) {
-        // PGRST116 = no rows found — user has no profile yet (no DB trigger).
+        // PGRST116 = no rows found — user has no profile yet.
+        // Don't attempt to create it here; AuthCallbackPage or onboarding handles that.
         if (error.code === 'PGRST116') {
-          console.warn('fetchProfile: no profile row found, creating fallback profile');
-          // The DB trigger handle_new_user() didn't fire or was delayed.
-          // Create the profile row manually so the session isn't destroyed.
-          const meta = user.user_metadata ?? {};
-          const fallbackProfile: Omit<Profile, 'created_at'> = {
-            id: user.id,
-            email: user.email ?? '',
-            full_name: meta.full_name ?? meta.name ?? user.email ?? '',
-            avatar_url: meta.avatar_url,
-            role: meta.role ?? 'gerente',
-            is_active: true,
-          };
-          const { error: insertErr } = await supabase
-            .from('profiles')
-            .upsert(fallbackProfile, { onConflict: 'id' });
-          if (insertErr) {
-            console.warn('fetchProfile: fallback insert failed:', insertErr.message);
-          }
-          // Re-fetch to get the complete row (including created_at, team_id)
-          const { data: refetched } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-          set({ profile: (refetched as Profile) ?? null, profileFetchFailed: false });
+          console.warn('fetchProfile: no profile row found — awaiting onboarding/callback');
+          set({ profile: null, profileFetchFailed: false });
           return;
         }
         // Any other error (500, RLS recursion, etc.) is a server failure.

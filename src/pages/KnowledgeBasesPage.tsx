@@ -23,16 +23,8 @@ import type { KnowledgeBase, KnowledgeColumn } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 import { useDemoStore } from '@/stores/demoStore';
 import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/config';
 import { cn } from '@/lib/utils';
-
-const isSupabaseConfigured = Boolean(
-  import.meta.env.VITE_SUPABASE_URL &&
-  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') &&
-  !import.meta.env.VITE_SUPABASE_URL.includes('your-project') &&
-  import.meta.env.VITE_SUPABASE_ANON_KEY &&
-  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('placeholder') &&
-  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('your-anon-key')
-);
 
 // ---------------------------------------------------------------------------
 // Product template columns matching the autoparts schema from the screenshot

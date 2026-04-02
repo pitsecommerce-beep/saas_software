@@ -259,3 +259,15 @@ Railway se usa para el backend que maneja webhooks de YCloud y procesa mensajes 
 5. Tests E2E con Playwright
 6. Code splitting para reducir bundle size
 7. Almacenar datos del Excel cargado en la tabla `knowledge_bases` como JSON o en Storage de Supabase para consulta por la IA
+
+## Optimizaciones abril 2026
+
+1. **`isSupabaseConfigured` extraído a `src/lib/config.ts`** — Se eliminó la declaración duplicada en `authStore.ts`, `ConversationsPage.tsx`, `DashboardPage.tsx`, `KnowledgeBasesPage.tsx` y `SettingsPage.tsx`. Todos ahora importan desde `@/lib/config`.
+2. **Timeout de inicialización reducido de 20s a 8s** — El `safetyTimeout` en `authStore.ts` ahora es de 8000ms para evitar que el splash screen se quede visible demasiado tiempo.
+3. **Timeout por operación reducido de 8s a 5s** — El `withTimeout` en `authStore.ts` ahora es de 5000ms.
+4. **Reintentos reducidos de 2 a 1** — `maxRetries` en `authStore.ts` cambiado de 2 a 1 y se eliminó el delay entre reintentos para acelerar la carga.
+5. **`fetchProfile` ya no hace upsert en PGRST116** — Cuando no se encuentra el perfil, se pone `profile: null` y se deja que `AuthCallbackPage` o el onboarding manejen la creación.
+6. **Búsqueda full-text via RPC** — Se implementó `getKnowledgeSchema()` + `searchKnowledgeRows()` que usan las funciones RPC `search_knowledge` y `search_knowledge_fallback` en Postgres. Esto reemplaza a `getKnowledgeContext()` que traía hasta 200 filas completas como JSON al prompt.
+7. **`max_tokens` reducido de 1024 a 500** — En `callOpenAI`, `callAnthropic` y `callGoogle` dentro de `server/src/ai.ts`.
+8. **Historial de mensajes reducido de 20 a 10** — En `processInboundMessage` de `server/src/webhook.ts`, el `.limit()` de `recentMessages` pasó de 20 a 10.
+9. **Prompt de concisión agregado** — Se añadió instrucción al final de `buildSystemPrompt` para que la IA responda de forma concisa, sin markdown ni formato especial.
