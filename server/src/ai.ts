@@ -50,6 +50,7 @@ function buildSystemPrompt(agentPrompt: string, knowledgeContext: string): strin
   if (knowledgeContext) {
     prompt += `\n\n--- Base de Conocimiento ---\n${knowledgeContext}`;
   }
+  prompt += '\n\nIMPORTANTE: Responde de forma concisa y directa, como en una conversación de WhatsApp. Máximo 2-3 párrafos cortos. No uses markdown, asteriscos ni formato especial.';
   return prompt;
 }
 
@@ -66,7 +67,7 @@ async function callOpenAI(
       { role: 'system', content: systemPrompt },
       ...messages,
     ],
-    max_tokens: 1024,
+    max_tokens: 500,
     temperature: 0.7,
   });
   return response.choices[0]?.message?.content ?? null;
@@ -83,7 +84,7 @@ async function callAnthropic(
     model,
     system: systemPrompt,
     messages,
-    max_tokens: 1024,
+    max_tokens: 500,
   });
   const textBlock = response.content.find((b) => b.type === 'text');
   return textBlock ? textBlock.text : null;
@@ -109,7 +110,7 @@ async function callGoogle(
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents,
-        generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+        generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
       }),
     }
   );
