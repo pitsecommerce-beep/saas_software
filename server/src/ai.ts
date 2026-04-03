@@ -51,6 +51,7 @@ function buildSystemPrompt(agentPrompt: string, knowledgeContext: string): strin
     prompt += `\n\n--- Base de Conocimiento ---\n${knowledgeContext}`;
   }
   prompt += '\n\nIMPORTANTE: Responde de forma concisa y directa, como en una conversación de WhatsApp. Máximo 2-3 párrafos cortos. No uses markdown, asteriscos ni formato especial.';
+  prompt += '\n\nCuando menciones un producto que tiene imagen disponible, incluye la URL completa de la imagen en tu respuesta. No la ocultes ni la modifiques.';
   return prompt;
 }
 

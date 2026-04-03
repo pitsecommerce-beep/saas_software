@@ -229,8 +229,9 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     metadata: { agent_id: agent.id, agent_name: agent.name },
   });
 
-  // 7. Send response via YCloud API
-  await sendYCloudMessage(recipientPhone, senderPhone, aiResponse);
+  // 7. Send response via YCloud API (separate text and image URLs)
+  const { cleanText, imageUrls } = extractImageUrls(aiResponse);
+  await sendYCloudMessage(recipientPhone, senderPhone, cleanText, imageUrls);
 
   // Update conversation
   await supabase
@@ -345,7 +346,14 @@ async function searchKnowledgeRows(
   return sections.join('\n\n');
 }
 
-async function sendYCloudMessage(from: string, to: string, text: string): Promise<void> {
+export function extractImageUrls(text: string): { cleanText: string; imageUrls: string[] } {
+  const imageUrlRegex = /https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?/gi;
+  const imageUrls = text.match(imageUrlRegex) ?? [];
+  const cleanText = text.replace(imageUrlRegex, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { cleanText, imageUrls };
+}
+
+async function sendYCloudMessage(from: string, to: string, text: string, imageUrls?: string[]): Promise<void> {
   const apiKey = process.env.YCLOUD_API_KEY;
   if (!apiKey) {
     console.error('YCLOUD_API_KEY not configured');
@@ -353,23 +361,50 @@ async function sendYCloudMessage(from: string, to: string, text: string): Promis
   }
 
   try {
-    const response = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
-      },
-      body: JSON.stringify({
-        from,
-        to,
-        type: 'text',
-        text: { body: text },
-      }),
-    });
+    // Send the text message
+    if (text) {
+      const response = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({
+          from,
+          to,
+          type: 'text',
+          text: { body: text },
+        }),
+      });
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`YCloud API error (${response.status}):`, errorBody);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`YCloud API error (${response.status}):`, errorBody);
+      }
+    }
+
+    // Send each image as a separate message
+    if (imageUrls?.length) {
+      for (const url of imageUrls) {
+        const imgResponse = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': apiKey,
+          },
+          body: JSON.stringify({
+            from,
+            to,
+            type: 'image',
+            image: { url },
+          }),
+        });
+
+        if (!imgResponse.ok) {
+          const errorBody = await imgResponse.text();
+          console.error(`YCloud API image error (${imgResponse.status}):`, errorBody);
+        }
+      }
     }
   } catch (err) {
     console.error('Error sending YCloud message:', err);
