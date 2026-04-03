@@ -306,6 +306,17 @@ async function searchKnowledgeRows(
     usedFallback = true;
   }
 
+  // Nivel 3: búsqueda fuzzy con trigram (para typos)
+  if (!rows || rows.length === 0) {
+    const { data: fuzzyResults } = await supabase
+      .rpc('search_knowledge_fuzzy', {
+        p_team_id: teamId,
+        p_query: query,
+        p_limit: maxResults,
+      });
+    rows = fuzzyResults;
+  }
+
   console.log(`[KB] query="${query}" → ${rows?.length ?? 0} rows${usedFallback ? ' (fallback)' : ''}`);
 
   if (!rows || rows.length === 0) return '';
