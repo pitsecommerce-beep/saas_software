@@ -200,6 +200,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .limit(10);
 
   // Fetch knowledge schema and search for relevant rows
+  console.log(`[KB] Searching knowledge for team=${teamId}, query="${messageText}"`);
   const knowledgeSchema = await getKnowledgeSchema(teamId);
   const searchResults = await searchKnowledgeRows(teamId, messageText, 15);
 
@@ -209,6 +210,8 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   } else if (knowledgeSchema) {
     contextForAI += '\n\n(No se encontraron productos específicos para esta consulta. Informa al cliente que puede proporcionar más detalles como marca, modelo o tipo de pieza.)';
   }
+
+  console.log(`[KB] Context length: ${contextForAI.length} chars (~${Math.round(contextForAI.length / 4)} tokens), messages: ${recentMessages?.length ?? 0}`);
 
   // Get AI response
   const aiResponse = await getAIResponse(agent, recentMessages ?? [], contextForAI);
@@ -282,17 +285,39 @@ async function searchKnowledgeRows(
       p_limit: maxResults,
     });
 
+  if (error) {
+    console.warn(`[KB] search_knowledge RPC error:`, error.message);
+  }
+
   let rows = results;
+  let usedFallback = false;
 
   if ((!rows || rows.length === 0) && !error) {
-    const { data: fallbackResults } = await supabase
+    const { data: fallbackResults, error: fbError } = await supabase
       .rpc('search_knowledge_fallback', {
         p_team_id: teamId,
         p_query: query,
         p_limit: maxResults,
       });
+    if (fbError) {
+      console.warn(`[KB] search_knowledge_fallback RPC error:`, fbError.message);
+    }
     rows = fallbackResults;
+    usedFallback = true;
   }
+
+  // Nivel 3: búsqueda fuzzy con trigram (para typos)
+  if (!rows || rows.length === 0) {
+    const { data: fuzzyResults } = await supabase
+      .rpc('search_knowledge_fuzzy', {
+        p_team_id: teamId,
+        p_query: query,
+        p_limit: maxResults,
+      });
+    rows = fuzzyResults;
+  }
+
+  console.log(`[KB] query="${query}" → ${rows?.length ?? 0} rows${usedFallback ? ' (fallback)' : ''}`);
 
   if (!rows || rows.length === 0) return '';
 
