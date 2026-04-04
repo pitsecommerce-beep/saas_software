@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send, UserPlus } from 'lucide-react';
+import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { Conversation, Message, ConversationStatus, Customer, ChannelType, Profile } from '@/types';
