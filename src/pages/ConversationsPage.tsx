@@ -3,10 +3,10 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send } from 'lucide-react';
+import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send, UserPlus } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
 import { useAuthStore } from '@/stores/authStore';
-import type { Conversation, Message, ConversationStatus, Customer, ChannelType } from '@/types';
+import type { Conversation, Message, ConversationStatus, Customer, ChannelType, Profile } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { ConversationList } from '@/components/conversations/ConversationList';
@@ -50,7 +50,7 @@ const mockConversations: Conversation[] = [
     },
     channel: 'whatsapp',
     channel_contact_id: '5215512345678',
-    status: 'active',
+    status: 'nuevo',
     is_ai_enabled: true,
     last_message: 'Perfecto, me interesa el paquete premium. Cual es el precio mayoreo?',
     last_message_at: minutesAgo(2),
@@ -73,7 +73,7 @@ const mockConversations: Conversation[] = [
     },
     channel: 'whatsapp',
     channel_contact_id: '5213398765432',
-    status: 'active',
+    status: 'ai_attended',
     is_ai_enabled: false,
     last_message: 'Ya realice la transferencia, les envio el comprobante',
     last_message_at: minutesAgo(30),
@@ -133,12 +133,20 @@ const channelColors: Record<ChannelType, string> = {
 
 type ViewMode = 'list' | 'canvas';
 
+function getInitialViewMode(): ViewMode {
+  try {
+    const saved = localStorage.getItem('conversations_view_mode');
+    if (saved === 'list' || saved === 'canvas') return saved;
+  } catch { /* ignore */ }
+  return 'list';
+}
+
 export default function ConversationsPage() {
   const { isDemoMode } = useDemoStore();
   const { profile } = useAuthStore();
   const teamId = profile?.team_id;
 
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -155,9 +163,48 @@ export default function ConversationsPage() {
   const [newConvMessage, setNewConvMessage] = useState('');
   const [newConvSending, setNewConvSending] = useState(false);
 
+  // Vendor assignment state
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const [vendors, setVendors] = useState<Profile[]>([]);
+  const [vendorsLoaded, setVendorsLoaded] = useState(false);
+
+  // Persist view mode preference
+  const handleSetViewMode = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+    try { localStorage.setItem('conversations_view_mode', mode); } catch { /* ignore */ }
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Fetch real data from Supabase
   // ---------------------------------------------------------------------------
+
+  const loadVendors = useCallback(async () => {
+    if (!isSupabaseConfigured || !teamId) {
+      if (isDemoMode) {
+        setVendors([
+          { id: 'profile-1', email: 'carlos@empresa.com', full_name: 'Carlos Mendez', role: 'vendedor', is_active: true, created_at: '' },
+          { id: 'profile-2', email: 'ana@empresa.com', full_name: 'Ana Torres', role: 'vendedor', is_active: true, created_at: '' },
+        ]);
+      }
+      setVendorsLoaded(true);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('team_id', teamId)
+        .in('role', ['vendedor', 'gerente'])
+        .eq('is_active', true)
+        .order('full_name');
+      if (error) throw error;
+      setVendors((data as Profile[]) ?? []);
+    } catch (err) {
+      console.error('Error loading vendors:', err);
+    } finally {
+      setVendorsLoaded(true);
+    }
+  }, [teamId, isDemoMode]);
 
   const loadConversations = useCallback(async () => {
     if (!isSupabaseConfigured || !teamId) {
@@ -228,7 +275,10 @@ export default function ConversationsPage() {
       loadConversations();
       loadCustomers();
     }
-  }, [loadConversations, loadCustomers, dataLoaded]);
+    if (!vendorsLoaded) {
+      loadVendors();
+    }
+  }, [loadConversations, loadCustomers, loadVendors, dataLoaded, vendorsLoaded]);
 
   // Load messages when active conversation changes
   useEffect(() => {
@@ -330,7 +380,7 @@ export default function ConversationsPage() {
             customer_id: newConvCustomer.id,
             channel: newConvChannel,
             channel_contact_id: newConvCustomer.channel_id ?? newConvCustomer.id,
-            status: 'active' as ConversationStatus,
+            status: 'nuevo' as ConversationStatus,
             is_ai_enabled: false,
             last_message: newConvMessage.trim(),
             last_message_at: new Date().toISOString(),
@@ -361,7 +411,7 @@ export default function ConversationsPage() {
         customer: newConvCustomer,
         channel: newConvChannel,
         channel_contact_id: newConvCustomer.channel_id ?? newConvCustomer.id,
-        status: 'active',
+        status: 'nuevo',
         is_ai_enabled: false,
         last_message: newConvMessage.trim(),
         last_message_at: new Date().toISOString(),
@@ -552,8 +602,34 @@ export default function ConversationsPage() {
   );
 
   const handleAssignVendor = useCallback(() => {
-    console.log('Assign vendor to conversation:', activeConversationId);
-  }, [activeConversationId]);
+    setVendorModalOpen(true);
+  }, []);
+
+  const handleConfirmAssignVendor = useCallback(
+    async (vendorId: string) => {
+      if (!activeConversationId) return;
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('conversations')
+            .update({ assigned_to: vendorId })
+            .eq('id', activeConversationId);
+        } catch (err) {
+          console.error('Error assigning vendor:', err);
+        }
+      }
+      const vendor = vendors.find((v) => v.id === vendorId);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConversationId
+            ? { ...c, assigned_to: vendorId, assigned_profile: vendor }
+            : c
+        )
+      );
+      setVendorModalOpen(false);
+    },
+    [activeConversationId, vendors]
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -570,7 +646,7 @@ export default function ConversationsPage() {
           {/* View toggle */}
           <div className="flex items-center rounded-lg border border-surface-200 bg-surface-50 p-0.5">
             <button
-              onClick={() => setViewMode('list')}
+              onClick={() => handleSetViewMode('list')}
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
                 viewMode === 'list'
@@ -582,7 +658,7 @@ export default function ConversationsPage() {
               Lista
             </button>
             <button
-              onClick={() => setViewMode('canvas')}
+              onClick={() => handleSetViewMode('canvas')}
               className={cn(
                 'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
                 viewMode === 'canvas'
@@ -821,6 +897,63 @@ export default function ConversationsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Vendor assignment modal */}
+      <Modal
+        isOpen={vendorModalOpen}
+        onClose={() => setVendorModalOpen(false)}
+        title="Asignar vendedor"
+        size="sm"
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-surface-500 mb-3">
+            Selecciona un vendedor para esta conversación
+          </p>
+          {vendors.length === 0 ? (
+            <p className="text-center text-sm text-surface-400 py-6">No hay vendedores disponibles</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-surface-200 divide-y divide-surface-100">
+              {vendors.map((vendor) => {
+                const isAssigned = activeConversation?.assigned_to === vendor.id;
+                return (
+                  <button
+                    key={vendor.id}
+                    type="button"
+                    onClick={() => handleConfirmAssignVendor(vendor.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-surface-50',
+                      isAssigned ? 'bg-primary-50' : 'bg-white'
+                    )}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-600">
+                      {vendor.full_name.charAt(0)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-surface-900 truncate">{vendor.full_name}</p>
+                      <p className="text-xs text-surface-400 truncate">{vendor.email}</p>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-100 text-surface-500 capitalize">
+                      {vendor.role}
+                    </span>
+                    {isAssigned && (
+                      <span className="shrink-0 text-[10px] font-medium text-primary-500">Asignado</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {activeConversation?.assigned_to && (
+            <button
+              type="button"
+              onClick={() => handleConfirmAssignVendor('')}
+              className="w-full mt-2 text-sm text-danger-500 hover:text-danger-600 font-medium py-2"
+            >
+              Quitar asignación
+            </button>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

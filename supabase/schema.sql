@@ -59,7 +59,7 @@ CREATE TABLE conversations (
   assigned_to UUID REFERENCES profiles(id) ON DELETE SET NULL,
   channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'messenger')),
   channel_contact_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'pending', 'closed')),
+  status TEXT NOT NULL DEFAULT 'nuevo' CHECK (status IN ('nuevo', 'ai_attended', 'payment_pending', 'immediate_attention', 'closed')),
   is_ai_enabled BOOLEAN DEFAULT TRUE,
   last_message TEXT,
   last_message_at TIMESTAMPTZ,

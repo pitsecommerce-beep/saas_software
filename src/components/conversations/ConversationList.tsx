@@ -159,7 +159,7 @@ function ConversationList({ conversations, activeId, onSelect, onDelete }: Conve
                     e.stopPropagation();
                     onDelete(conversation.id);
                   }}
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-md p-1.5 text-surface-400 hover:bg-danger-50 hover:text-danger-500"
+                  className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 rounded-md p-1.5 text-surface-400 hover:bg-danger-50 hover:text-danger-500"
                   title="Eliminar conversación"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
