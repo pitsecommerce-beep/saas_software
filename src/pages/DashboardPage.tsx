@@ -106,7 +106,7 @@ function DashboardPage() {
       setHasData(true);
 
       // Active conversations
-      const activeConvs = convs.filter((c) => c.status === 'active').length;
+      const activeConvs = convs.filter((c) => c.status !== 'closed').length;
 
       // Fetch customers count
       const { count: customerCount } = await supabase
@@ -332,8 +332,22 @@ function DashboardPage() {
             {recentConversations.map((conv, i) => {
               const channelLabel = conv.channel === 'whatsapp' ? 'WhatsApp' : conv.channel === 'instagram' ? 'Instagram' : 'Messenger';
               const channelColor = conv.channel === 'whatsapp' ? 'bg-green-50 text-green-700' : conv.channel === 'instagram' ? 'bg-pink-50 text-pink-700' : 'bg-blue-50 text-blue-700';
-              const statusColor = conv.status === 'active' ? 'bg-green-50 text-green-700' : conv.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-surface-100 text-surface-500';
-              const statusLabel = conv.status === 'active' ? 'Activa' : conv.status === 'pending' ? 'Pendiente' : 'Cerrada';
+              const statusColorMap: Record<string, string> = {
+                nuevo: 'bg-blue-50 text-blue-700',
+                ai_attended: 'bg-violet-50 text-violet-700',
+                payment_pending: 'bg-amber-50 text-amber-700',
+                immediate_attention: 'bg-danger-50 text-danger-700',
+                closed: 'bg-surface-100 text-surface-500',
+              };
+              const statusLabelMap: Record<string, string> = {
+                nuevo: 'Nuevo',
+                ai_attended: 'Atendido IA',
+                payment_pending: 'Pago Pendiente',
+                immediate_attention: 'Atención Inmediata',
+                closed: 'Cerrada',
+              };
+              const statusColor = statusColorMap[conv.status] ?? 'bg-surface-100 text-surface-500';
+              const statusLabel = statusLabelMap[conv.status] ?? conv.status;
               const timeAgo = conv.last_message_at ? formatTimeAgo(conv.last_message_at) : '';
 
               return (

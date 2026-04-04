@@ -1,6 +1,6 @@
 export type UserRole = 'gerente' | 'vendedor' | 'logistica';
 export type BusinessType = 'retailer' | 'servicios';
-export type ConversationStatus = 'active' | 'pending' | 'closed';
+export type ConversationStatus = 'nuevo' | 'ai_attended' | 'payment_pending' | 'immediate_attention' | 'closed';
 export type MessageSender = 'customer' | 'agent' | 'ai';
 export type ChannelType = 'whatsapp' | 'instagram' | 'messenger';
 

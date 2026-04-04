@@ -140,7 +140,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .eq('team_id', teamId)
     .eq('channel_contact_id', senderPhone)
     .eq('channel', 'whatsapp')
-    .in('status', ['active', 'pending'])
+    .in('status', ['nuevo', 'ai_attended', 'payment_pending', 'immediate_attention'])
     .order('created_at', { ascending: false })
     .limit(1)
     .single();
@@ -153,7 +153,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
         customer_id: customer.id,
         channel: 'whatsapp',
         channel_contact_id: senderPhone,
-        status: 'active',
+        status: 'nuevo',
         is_ai_enabled: true,
         last_message: messageText,
         last_message_at: new Date().toISOString(),

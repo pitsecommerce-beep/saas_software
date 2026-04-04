@@ -15,9 +15,11 @@ interface ConversationCanvasProps {
 }
 
 const columns: { key: ConversationStatus; label: string; color: string; dotColor: string }[] = [
-  { key: 'active', label: 'Activas', color: 'border-accent-200 bg-accent-50/50', dotColor: 'bg-accent-500' },
-  { key: 'pending', label: 'Pendientes', color: 'border-warning-200 bg-warning-50/50', dotColor: 'bg-warning-500' },
-  { key: 'closed', label: 'Cerradas', color: 'border-surface-200 bg-surface-50/50', dotColor: 'bg-surface-400' },
+  { key: 'nuevo', label: 'Mensaje Nuevo', color: 'border-blue-200 bg-blue-50/50', dotColor: 'bg-blue-500' },
+  { key: 'ai_attended', label: 'Atendido por IA', color: 'border-violet-200 bg-violet-50/50', dotColor: 'bg-violet-500' },
+  { key: 'payment_pending', label: 'Pago Pendiente', color: 'border-warning-200 bg-warning-50/50', dotColor: 'bg-warning-500' },
+  { key: 'immediate_attention', label: 'Atención Inmediata', color: 'border-danger-200 bg-danger-50/50', dotColor: 'bg-danger-500' },
+  { key: 'closed', label: 'Cerrado', color: 'border-surface-200 bg-surface-50/50', dotColor: 'bg-surface-400' },
 ];
 
 const channelConfig: Record<ChannelType, { label: string; color: string }> = {
@@ -27,20 +29,29 @@ const channelConfig: Record<ChannelType, { label: string; color: string }> = {
 };
 
 const nextStatus: Record<ConversationStatus, ConversationStatus> = {
-  active: 'pending',
-  pending: 'closed',
-  closed: 'active',
+  nuevo: 'ai_attended',
+  ai_attended: 'payment_pending',
+  payment_pending: 'closed',
+  immediate_attention: 'ai_attended',
+  closed: 'nuevo',
 };
 
 function ConversationCanvas({ conversations, onSelect, onStatusChange, onDelete }: ConversationCanvasProps) {
   const grouped = useMemo(() => {
     const groups: Record<ConversationStatus, Conversation[]> = {
-      active: [],
-      pending: [],
+      nuevo: [],
+      ai_attended: [],
+      payment_pending: [],
+      immediate_attention: [],
       closed: [],
     };
     for (const c of conversations) {
-      groups[c.status].push(c);
+      if (groups[c.status]) {
+        groups[c.status].push(c);
+      } else {
+        // Fallback for unknown statuses
+        groups.nuevo.push(c);
+      }
     }
     // Sort each group by most recent
     for (const key of Object.keys(groups) as ConversationStatus[]) {
@@ -55,19 +66,19 @@ function ConversationCanvas({ conversations, onSelect, onStatusChange, onDelete 
 
   return (
     <LayoutGroup>
-      <div className="flex gap-4 h-full overflow-x-auto p-1">
+      <div className="flex gap-3 h-full overflow-x-auto p-1">
         {columns.map((col) => (
-          <div key={col.key} className="flex-1 min-w-[300px] flex flex-col">
+          <div key={col.key} className="flex-1 min-w-[260px] flex flex-col">
             {/* Column header */}
             <div
               className={cn(
-                'flex items-center gap-2 px-4 py-3 rounded-t-xl border',
+                'flex items-center gap-2 px-3 py-2.5 rounded-t-xl border',
                 col.color
               )}
             >
               <span className={cn('h-2.5 w-2.5 rounded-full', col.dotColor)} />
-              <h3 className="text-sm font-semibold text-surface-800">{col.label}</h3>
-              <span className="ml-auto text-xs font-medium text-surface-500 bg-white/80 rounded-full px-2 py-0.5">
+              <h3 className="text-xs font-semibold text-surface-800 truncate">{col.label}</h3>
+              <span className="ml-auto text-[10px] font-medium text-surface-500 bg-white/80 rounded-full px-2 py-0.5">
                 {grouped[col.key].length}
               </span>
             </div>
@@ -111,6 +122,13 @@ function ConversationCanvas({ conversations, onSelect, onStatusChange, onDelete 
                           </span>
                         )}
                       </div>
+
+                      {/* Assigned vendor */}
+                      {conversation.assigned_profile && (
+                        <p className="text-[10px] text-surface-400 mb-1.5">
+                          Asignado a <span className="font-medium text-surface-500">{conversation.assigned_profile.full_name}</span>
+                        </p>
+                      )}
 
                       {/* Last message */}
                       {conversation.last_message && (
