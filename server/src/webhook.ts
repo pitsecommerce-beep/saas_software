@@ -396,7 +396,7 @@ async function sendYCloudMessage(from: string, to: string, text: string, imageUr
             from,
             to,
             type: 'image',
-            image: { url },
+            image: { link: url },
           }),
         });
 
