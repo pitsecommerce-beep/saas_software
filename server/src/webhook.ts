@@ -206,13 +206,15 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     return;
   }
 
-  // Fetch recent messages for context
-  const { data: recentMessages } = await supabase
+  // Fetch recent messages for context (descending to get the MOST RECENT, then reverse)
+  const { data: recentMessagesDesc } = await supabase
     .from('messages')
     .select('sender_type, content, created_at')
     .eq('conversation_id', conversation.id)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(10);
+
+  const recentMessages = recentMessagesDesc ? [...recentMessagesDesc].reverse() : [];
 
   // Fetch knowledge schema and search for relevant rows
   console.log(`[KB] Searching knowledge for team=${teamId}, query="${messageText}"`);
@@ -228,8 +230,15 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
 
   console.log(`[KB] Context length: ${contextForAI.length} chars (~${Math.round(contextForAI.length / 4)} tokens), messages: ${recentMessages?.length ?? 0}`);
 
+  // Sanitize message history before sending to AI
+  const sanitizedMessages = sanitizeMessageHistory(recentMessages ?? []);
+  if (sanitizedMessages.length === 0) {
+    console.warn('Message history empty after sanitization, skipping AI call');
+    return;
+  }
+
   // Get AI response (may include tool calls)
-  const aiResponse = await getAIResponse(agent, recentMessages ?? [], contextForAI);
+  const aiResponse = await getAIResponse(agent, sanitizedMessages, contextForAI);
 
   if (!aiResponse) {
     console.warn('AI returned empty response');
@@ -241,7 +250,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     aiResponse,
     agent,
     contextForAI,
-    recentMessages ?? [],
+    sanitizedMessages,
     teamId,
     customer.id,
     conversation.id
@@ -274,6 +283,43 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     .eq('id', conversation.id);
 
   console.log(`Replied to ${senderPhone} via agent "${agent.name}"`);
+}
+
+// ---------------------------------------------------------------------------
+// Sanitize message history for AI providers
+// ---------------------------------------------------------------------------
+
+function sanitizeMessageHistory(
+  messages: { sender_type: string; content: string; created_at: string }[]
+): { sender_type: string; content: string; created_at: string }[] {
+  if (messages.length === 0) return [];
+
+  // Merge consecutive messages with the same mapped role
+  // (e.g. 'ai' and 'agent' both map to 'assistant')
+  const mapRole = (senderType: string) => senderType === 'customer' ? 'user' : 'assistant';
+
+  const merged: { sender_type: string; content: string; created_at: string }[] = [];
+  for (const msg of messages) {
+    const lastMerged = merged[merged.length - 1];
+    if (lastMerged && mapRole(lastMerged.sender_type) === mapRole(msg.sender_type)) {
+      lastMerged.content += '\n\n' + msg.content;
+      lastMerged.created_at = msg.created_at; // keep the latest timestamp
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+
+  // Ensure the last message has role 'user'; if 'assistant', remove it
+  while (merged.length > 0 && mapRole(merged[merged.length - 1].sender_type) === 'assistant') {
+    merged.pop();
+  }
+
+  const discarded = messages.length - merged.length;
+  if (discarded > 0) {
+    console.log(`[Sanitize] Discarded/merged ${discarded} messages (${messages.length} → ${merged.length})`);
+  }
+
+  return merged;
 }
 
 // ---------------------------------------------------------------------------
