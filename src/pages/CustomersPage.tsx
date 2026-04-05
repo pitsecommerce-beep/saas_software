@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import type { Customer, ChannelType } from '@/types';
+import { useState, useEffect, useCallback } from 'react';
+import type { Customer, ChannelType, Profile, ConversationStatus } from '@/types';
 import { motion } from 'framer-motion';
-import { UserPlus, FileSpreadsheet, Upload, Download, AlertCircle } from 'lucide-react';
+import { UserPlus, FileSpreadsheet, Upload, Download, AlertCircle, MessageSquare } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useCustomerStore } from '@/stores/customerStore';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,10 @@ import { Modal } from '@/components/ui/Modal';
 import { CustomerTable } from '@/components/customers/CustomerTable';
 import { CustomerForm } from '@/components/customers/CustomerForm';
 import { TemplateDownloader } from '@/components/excel/TemplateDownloader';
+import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/config';
+import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
 
 const CUSTOMER_TEMPLATE_COLUMNS = [
   { name: 'RFC', example: 'XAXX010101000' },
@@ -45,12 +49,51 @@ export default function CustomersPage() {
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
   const [formLoading, setFormLoading] = useState(false);
 
+  // Vendor assignment state
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const [vendorTarget, setVendorTarget] = useState<Customer | null>(null);
+  const [vendors, setVendors] = useState<Profile[]>([]);
+
+  // Start conversation state
+  const [convModalOpen, setConvModalOpen] = useState(false);
+  const [convTarget, setConvTarget] = useState<Customer | null>(null);
+  const [convMessage, setConvMessage] = useState('');
+  const [convSending, setConvSending] = useState(false);
+
+  const navigate = useNavigate();
+
   // Fetch customers from Supabase when the team is available
   useEffect(() => {
     if (team?.id) {
       fetchCustomers(team.id);
     }
   }, [team?.id, fetchCustomers]);
+
+  // Load vendors
+  useEffect(() => {
+    async function load() {
+      if (!isSupabaseConfigured || !team?.id) {
+        setVendors([
+          { id: 'p1', email: 'carlos@empresa.com', full_name: 'Carlos Mendez', role: 'vendedor', is_active: true, created_at: '' },
+          { id: 'p2', email: 'ana@empresa.com', full_name: 'Ana Torres', role: 'vendedor', is_active: true, created_at: '' },
+        ]);
+        return;
+      }
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('team_id', team.id)
+          .in('role', ['vendedor', 'gerente'])
+          .eq('is_active', true)
+          .order('full_name');
+        if (data) setVendors(data as Profile[]);
+      } catch (err) {
+        console.error('Error loading vendors:', err);
+      }
+    }
+    load();
+  }, [team?.id]);
 
   // Open form for new customer
   function handleNewCustomer() {
@@ -118,6 +161,94 @@ export default function CustomersPage() {
     }
   }
 
+  // --- Vendor assignment handlers ---
+  function handleOpenAssignVendor(customer: Customer) {
+    setVendorTarget(customer);
+    setVendorModalOpen(true);
+  }
+
+  const handleConfirmAssignVendor = useCallback(
+    async (vendorId: string) => {
+      if (!vendorTarget || !team?.id) return;
+
+      // Find or create a conversation for this customer, then assign the vendor
+      if (isSupabaseConfigured) {
+        try {
+          // Find existing open conversation
+          const { data: existing } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('team_id', team.id)
+            .eq('customer_id', vendorTarget.id)
+            .not('status', 'eq', 'closed')
+            .limit(1)
+            .single();
+
+          const convId = existing?.id;
+          if (convId) {
+            await supabase
+              .from('conversations')
+              .update({ assigned_to: vendorId || null })
+              .eq('id', convId);
+          }
+        } catch (err) {
+          console.error('Error assigning vendor:', err);
+        }
+      }
+      setVendorModalOpen(false);
+      setVendorTarget(null);
+    },
+    [vendorTarget, team?.id]
+  );
+
+  // --- Start conversation handler ---
+  function handleOpenStartConversation(customer: Customer) {
+    setConvTarget(customer);
+    setConvMessage('');
+    setConvModalOpen(true);
+  }
+
+  async function handleStartConversation() {
+    if (!convTarget || !convMessage.trim() || !team?.id) return;
+    setConvSending(true);
+
+    try {
+      if (isSupabaseConfigured) {
+        const { data: newConv, error: convErr } = await supabase
+          .from('conversations')
+          .insert({
+            team_id: team.id,
+            customer_id: convTarget.id,
+            channel: convTarget.channel,
+            channel_contact_id: convTarget.channel_id ?? convTarget.phone ?? convTarget.id,
+            status: 'nuevo' as ConversationStatus,
+            is_ai_enabled: false,
+            last_message: convMessage.trim(),
+            last_message_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single();
+        if (convErr) throw convErr;
+
+        await supabase.from('messages').insert({
+          conversation_id: newConv.id,
+          sender_type: 'agent',
+          content: convMessage.trim(),
+        });
+      }
+
+      setConvModalOpen(false);
+      setConvTarget(null);
+      setConvMessage('');
+      // Navigate to conversations page
+      navigate('/conversations');
+    } catch (err) {
+      console.error('Error creating conversation:', err);
+    } finally {
+      setConvSending(false);
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -163,6 +294,8 @@ export default function CustomersPage() {
         customers={customers}
         onEdit={handleEdit}
         onDelete={handleDeleteClick}
+        onAssignVendor={handleOpenAssignVendor}
+        onStartConversation={handleOpenStartConversation}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
@@ -244,6 +377,91 @@ export default function CustomersPage() {
             <p className="text-xs text-amber-700">
               Usa exactamente los nombres de columna de la plantilla para que la importación funcione correctamente.
             </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Vendor Assignment Modal */}
+      <Modal
+        isOpen={vendorModalOpen}
+        onClose={() => { setVendorModalOpen(false); setVendorTarget(null); }}
+        title={`Asignar vendedor a ${vendorTarget?.name ?? ''}`}
+        size="sm"
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-surface-500 mb-3">
+            Selecciona un vendedor para asignar a este cliente
+          </p>
+          {vendors.length === 0 ? (
+            <p className="text-center text-sm text-surface-400 py-6">No hay vendedores disponibles</p>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-surface-200 divide-y divide-surface-100">
+              {vendors.map((vendor) => (
+                <button
+                  key={vendor.id}
+                  type="button"
+                  onClick={() => handleConfirmAssignVendor(vendor.id)}
+                  className="w-full flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-surface-50 bg-white"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-600">
+                    {vendor.full_name.charAt(0)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-surface-900 truncate">{vendor.full_name}</p>
+                    <p className="text-xs text-surface-400 truncate">{vendor.email}</p>
+                  </div>
+                  <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-100 text-surface-500 capitalize">
+                    {vendor.role}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Start Conversation Modal */}
+      <Modal
+        isOpen={convModalOpen}
+        onClose={() => { setConvModalOpen(false); setConvTarget(null); }}
+        title={`Conversación con ${convTarget?.name ?? ''}`}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg bg-surface-50 border border-surface-200 p-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-600">
+              {convTarget?.name?.charAt(0) ?? '?'}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-surface-900">{convTarget?.name}</p>
+              <p className="text-xs text-surface-400">{convTarget?.phone ?? convTarget?.email ?? convTarget?.channel}</p>
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-surface-700 block mb-1.5">Mensaje inicial</label>
+            <textarea
+              rows={3}
+              placeholder="Escribe el primer mensaje para este cliente..."
+              value={convMessage}
+              onChange={(e) => setConvMessage(e.target.value)}
+              className={cn(
+                'w-full rounded-lg border border-surface-200 px-3.5 py-2.5 text-sm text-surface-900',
+                'placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none'
+              )}
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => { setConvModalOpen(false); setConvTarget(null); }}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={!convMessage.trim()}
+              loading={convSending}
+              icon={<MessageSquare className="h-4 w-4" />}
+              onClick={handleStartConversation}
+            >
+              Iniciar conversación
+            </Button>
           </div>
         </div>
       </Modal>
