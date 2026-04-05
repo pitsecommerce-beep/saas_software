@@ -304,7 +304,7 @@ async function processAIResponse(
 
   // Tool call loop (max 3 iterations to prevent infinite loops)
   let currentResponse = response;
-  let providerMessages: unknown[] = [...conversationHistory];
+  const providerMessages: unknown[] = [...conversationHistory];
   const MAX_TOOL_ITERATIONS = 3;
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
