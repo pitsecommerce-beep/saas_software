@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Users, Clock, ThumbsUp, BarChart2, FlaskConical } from 'lucide-react';
+import { MessageSquare, Users, Clock, ThumbsUp, BarChart2, FlaskConical, ShoppingCart, DollarSign } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ConversationChart } from '@/components/dashboard/ConversationChart';
 import { ChannelDistribution } from '@/components/dashboard/ChannelDistribution';
@@ -79,6 +79,7 @@ function DashboardPage() {
   const [hasData, setHasData] = useState(false);
   const [loading, setLoading] = useState(true);
   const [recentConversations, setRecentConversations] = useState<{ customer_name: string; last_message: string; channel: string; last_message_at: string; status: string }[]>([]);
+  const [orderMetrics, setOrderMetrics] = useState<{ ordersThisMonth: number; totalSold: number }>({ ordersThisMonth: 0, totalSold: 0 });
 
   const loadDashboardData = useCallback(async () => {
     if (!isSupabaseConfigured || !teamId) {
@@ -225,6 +226,22 @@ function DashboardPage() {
         setVendorData(vendorStats);
       }
 
+      // Order metrics for current month
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const { data: monthOrders } = await supabase
+        .from('orders')
+        .select('id, total, status')
+        .eq('team_id', teamId)
+        .gte('created_at', monthStart);
+
+      const ordersThisMonth = monthOrders?.length ?? 0;
+      const totalSold = (monthOrders ?? [])
+        .filter((o) => o.status !== 'cancelado')
+        .reduce((sum, o) => sum + (parseFloat(String(o.total)) || 0), 0);
+
+      setOrderMetrics({ ordersThisMonth, totalSold });
+
       // Recent conversations for the summary section
       const recent = convs
         .filter((c) => c.last_message)
@@ -311,6 +328,28 @@ function DashboardPage() {
           <MetricCard key={m.title} {...m} delay={i * 0.08} />
         ))}
       </div>
+
+      {/* Order metrics */}
+      {(orderMetrics.ordersThisMonth > 0 || orderMetrics.totalSold > 0) && (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <MetricCard
+            title="Pedidos del mes"
+            value={orderMetrics.ordersThisMonth.toLocaleString()}
+            change="Este mes"
+            changeType="positive"
+            icon={ShoppingCart}
+            delay={0.32}
+          />
+          <MetricCard
+            title="Total vendido"
+            value={`$${orderMetrics.totalSold.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            change="Este mes"
+            changeType="positive"
+            icon={DollarSign}
+            delay={0.4}
+          />
+        </div>
+      )}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">

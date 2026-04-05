@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import type { FormEvent } from 'react';
-import { Eye, EyeOff, Bot, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Bot, Sparkles, Wrench } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { AIAgent } from '@/types';
 import { AI_PROVIDERS } from '@/config/modules';
@@ -26,6 +26,7 @@ function AIAgentConfig({ agent, onSubmit, onCancel }: AIAgentConfigProps) {
   const [apiKey, setApiKey] = useState(agent?.api_key_encrypted ?? '');
   const [systemPrompt, setSystemPrompt] = useState(agent?.system_prompt ?? '');
   const [isActive, setIsActive] = useState(agent?.is_active ?? true);
+  const [enabledTools, setEnabledTools] = useState<string[]>(agent?.enabled_tools ?? []);
   const [showApiKey, setShowApiKey] = useState(false);
 
   const selectedProvider = useMemo(
@@ -64,6 +65,7 @@ function AIAgentConfig({ agent, onSubmit, onCancel }: AIAgentConfigProps) {
       api_key_encrypted: apiKey,
       system_prompt: systemPrompt,
       is_active: isActive,
+      enabled_tools: enabledTools,
     });
   };
 
@@ -187,6 +189,41 @@ function AIAgentConfig({ agent, onSubmit, onCancel }: AIAgentConfigProps) {
           Menciona las columnas de las bases de conocimiento que el agente debe
           consultar.
         </p>
+      </div>
+
+      {/* Agent Tools */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Wrench className="h-4 w-4 text-surface-500" />
+          <label className="text-sm font-medium text-surface-700">
+            Herramientas del agente
+          </label>
+        </div>
+        <p className="text-xs text-surface-400">
+          Selecciona las herramientas que este agente puede usar durante las conversaciones.
+        </p>
+        <div className="space-y-2 rounded-lg border border-surface-200 bg-surface-50 p-3">
+          <label className="flex items-start gap-3 cursor-pointer rounded-lg p-2 hover:bg-white transition-colors">
+            <input
+              type="checkbox"
+              checked={enabledTools.includes('crear_pedido')}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setEnabledTools((prev) => [...prev, 'crear_pedido']);
+                } else {
+                  setEnabledTools((prev) => prev.filter((t) => t !== 'crear_pedido'));
+                }
+              }}
+              className="mt-0.5 h-4 w-4 rounded border-surface-300 text-primary-500 focus:ring-primary-500/20"
+            />
+            <div>
+              <span className="text-sm font-medium text-surface-800">Crear pedido</span>
+              <p className="text-xs text-surface-500 mt-0.5">
+                Permite al agente crear pedidos durante la conversacion cuando el cliente confirma una compra. Incluye consulta de disponibilidad automaticamente.
+              </p>
+            </div>
+          </label>
+        </div>
       </div>
 
       {/* Active Toggle */}
