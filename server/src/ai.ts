@@ -165,10 +165,22 @@ export async function getAIResponse(
   knowledgeContext: string
 ): Promise<AIResponse | null> {
   const systemPrompt = buildSystemPrompt(agent.system_prompt, knowledgeContext, agent.enabled_tools);
-  const conversationHistory = messages.map((m) => ({
+
+  // Map sender_type to role, then merge consecutive messages with the same role
+  const mapped = messages.map((m) => ({
     role: m.sender_type === 'customer' ? 'user' as const : 'assistant' as const,
     content: m.content,
   }));
+
+  const conversationHistory: { role: 'user' | 'assistant'; content: string }[] = [];
+  for (const msg of mapped) {
+    const last = conversationHistory[conversationHistory.length - 1];
+    if (last && last.role === msg.role) {
+      last.content += '\n\n' + msg.content;
+    } else {
+      conversationHistory.push({ ...msg });
+    }
+  }
 
   try {
     switch (agent.provider) {
@@ -324,6 +336,14 @@ async function callAnthropic(
 ): Promise<AIResponse | null> {
   const client = new Anthropic({ apiKey });
   const tools = buildAnthropicTools(enabledTools);
+
+  // Validate messages before calling the API
+  if (messages.length === 0) {
+    throw new Error('Anthropic: messages array is empty. Cannot send a request with no messages.');
+  }
+  if (messages[messages.length - 1].role !== 'user') {
+    throw new Error(`Anthropic: last message has role '${messages[messages.length - 1].role}', but must be 'user'. History may be corrupted.`);
+  }
 
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
