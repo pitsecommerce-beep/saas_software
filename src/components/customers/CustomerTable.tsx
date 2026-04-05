@@ -97,6 +97,9 @@ function CustomerTable({
                   Canal
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-surface-600 hidden lg:table-cell">
+                  Vendedor
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-surface-600 hidden xl:table-cell">
                   Fecha de Alta
                 </th>
                 <th className="px-4 py-3 text-right font-semibold text-surface-600">
@@ -148,8 +151,24 @@ function CustomerTable({
                       </Badge>
                     </td>
 
+                    {/* Vendedor asignado */}
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      {customer.assigned_profile ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-600">
+                            {customer.assigned_profile.full_name.charAt(0)}
+                          </div>
+                          <span className="text-sm text-surface-700 truncate">
+                            {customer.assigned_profile.full_name}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-surface-300">Sin asignar</span>
+                      )}
+                    </td>
+
                     {/* Fecha de Alta */}
-                    <td className="px-4 py-3 text-surface-500 hidden lg:table-cell">
+                    <td className="px-4 py-3 text-surface-500 hidden xl:table-cell">
                       {new Date(customer.created_at).toLocaleDateString('es-MX', {
                         year: 'numeric',
                         month: 'short',

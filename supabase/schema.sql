@@ -45,6 +45,7 @@ CREATE TABLE customers (
   channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'messenger')),
   channel_id TEXT,
   notes TEXT,
+  assigned_to UUID REFERENCES profiles(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -637,6 +638,7 @@ CREATE TRIGGER update_products_updated_at
 
 CREATE INDEX idx_profiles_team_id ON profiles(team_id);
 CREATE INDEX idx_customers_team_id ON customers(team_id);
+CREATE INDEX idx_customers_assigned_to ON customers(assigned_to);
 CREATE INDEX idx_conversations_team_id ON conversations(team_id);
 CREATE INDEX idx_conversations_customer_id ON conversations(customer_id);
 CREATE INDEX idx_conversations_assigned_to ON conversations(assigned_to);

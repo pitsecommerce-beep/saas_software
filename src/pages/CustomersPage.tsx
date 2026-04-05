@@ -39,6 +39,7 @@ export default function CustomersPage() {
     addCustomer,
     updateCustomer,
     deleteCustomer,
+    setCustomers,
   } = useCustomerStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -171,34 +172,41 @@ export default function CustomersPage() {
     async (vendorId: string) => {
       if (!vendorTarget || !team?.id) return;
 
-      // Find or create a conversation for this customer, then assign the vendor
+      const vendor = vendors.find((v) => v.id === vendorId) ?? null;
+
       if (isSupabaseConfigured) {
         try {
-          // Find existing open conversation
-          const { data: existing } = await supabase
+          // Assign vendor directly to the customer
+          await supabase
+            .from('customers')
+            .update({ assigned_to: vendorId || null })
+            .eq('id', vendorTarget.id);
+
+          // Also assign to any open conversations for this customer
+          await supabase
             .from('conversations')
-            .select('id')
+            .update({ assigned_to: vendorId || null })
             .eq('team_id', team.id)
             .eq('customer_id', vendorTarget.id)
-            .not('status', 'eq', 'closed')
-            .limit(1)
-            .single();
-
-          const convId = existing?.id;
-          if (convId) {
-            await supabase
-              .from('conversations')
-              .update({ assigned_to: vendorId || null })
-              .eq('id', convId);
-          }
+            .not('status', 'eq', 'closed');
         } catch (err) {
           console.error('Error assigning vendor:', err);
         }
       }
+
+      // Update local state
+      setCustomers(
+        customers.map((c) =>
+          c.id === vendorTarget.id
+            ? { ...c, assigned_to: vendorId || undefined, assigned_profile: vendor ?? undefined }
+            : c
+        )
+      );
+
       setVendorModalOpen(false);
       setVendorTarget(null);
     },
-    [vendorTarget, team?.id]
+    [vendorTarget, team?.id, vendors, customers, setCustomers]
   );
 
   // --- Start conversation handler ---
@@ -388,34 +396,63 @@ export default function CustomersPage() {
         title={`Asignar vendedor a ${vendorTarget?.name ?? ''}`}
         size="sm"
       >
-        <div className="space-y-2">
-          <p className="text-sm text-surface-500 mb-3">
+        <div className="space-y-3">
+          {vendorTarget?.assigned_profile && (
+            <div className="flex items-center gap-2 rounded-lg bg-violet-50 border border-violet-200 px-3 py-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-700">
+                {vendorTarget.assigned_profile.full_name.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-violet-600">Asignado actualmente a</p>
+                <p className="text-sm font-medium text-violet-800">{vendorTarget.assigned_profile.full_name}</p>
+              </div>
+            </div>
+          )}
+          <p className="text-sm text-surface-500">
             Selecciona un vendedor para asignar a este cliente
           </p>
           {vendors.length === 0 ? (
             <p className="text-center text-sm text-surface-400 py-6">No hay vendedores disponibles</p>
           ) : (
             <div className="max-h-64 overflow-y-auto rounded-lg border border-surface-200 divide-y divide-surface-100">
-              {vendors.map((vendor) => (
-                <button
-                  key={vendor.id}
-                  type="button"
-                  onClick={() => handleConfirmAssignVendor(vendor.id)}
-                  className="w-full flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-surface-50 bg-white"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-600">
-                    {vendor.full_name.charAt(0)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-surface-900 truncate">{vendor.full_name}</p>
-                    <p className="text-xs text-surface-400 truncate">{vendor.email}</p>
-                  </div>
-                  <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-100 text-surface-500 capitalize">
-                    {vendor.role}
-                  </span>
-                </button>
-              ))}
+              {vendors.map((vendor) => {
+                const isAssigned = vendorTarget?.assigned_to === vendor.id;
+                return (
+                  <button
+                    key={vendor.id}
+                    type="button"
+                    onClick={() => handleConfirmAssignVendor(vendor.id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-surface-50',
+                      isAssigned ? 'bg-primary-50' : 'bg-white'
+                    )}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-600">
+                      {vendor.full_name.charAt(0)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-surface-900 truncate">{vendor.full_name}</p>
+                      <p className="text-xs text-surface-400 truncate">{vendor.email}</p>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-surface-100 text-surface-500 capitalize">
+                      {vendor.role}
+                    </span>
+                    {isAssigned && (
+                      <span className="shrink-0 text-[10px] font-medium text-primary-500">Asignado</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+          )}
+          {vendorTarget?.assigned_to && (
+            <button
+              type="button"
+              onClick={() => handleConfirmAssignVendor('')}
+              className="w-full text-sm text-danger-500 hover:text-danger-600 font-medium py-2"
+            >
+              Quitar asignación
+            </button>
           )}
         </div>
       </Modal>
@@ -425,7 +462,7 @@ export default function CustomersPage() {
         isOpen={convModalOpen}
         onClose={() => { setConvModalOpen(false); setConvTarget(null); }}
         title={`Conversación con ${convTarget?.name ?? ''}`}
-        size="sm"
+        size="md"
       >
         <div className="space-y-4">
           <div className="flex items-center gap-3 rounded-lg bg-surface-50 border border-surface-200 p-3">
