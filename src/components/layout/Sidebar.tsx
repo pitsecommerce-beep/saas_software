@@ -13,6 +13,7 @@ import {
   X,
   User,
   Database,
+  ShoppingCart,
 } from 'lucide-react';
 import type { Profile } from '@/types';
 import { cn } from '@/lib/utils';
@@ -29,6 +30,7 @@ const navItems = [
   { to: '/conversations', label: 'Conversaciones', icon: MessageSquare },
   { to: '/customers', label: 'Clientes', icon: Users },
   { to: '/knowledge-bases', label: 'Bases de Datos', icon: Database },
+  { to: '/orders', label: 'Pedidos', icon: ShoppingCart },
   { to: '/team', label: 'Equipo', icon: UserPlus },
   { to: '/settings', label: 'Configuración', icon: Settings },
 ];

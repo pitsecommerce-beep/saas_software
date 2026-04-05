@@ -87,6 +87,34 @@ export interface AIAgent {
   api_key_encrypted: string;
   system_prompt: string;
   is_active: boolean;
+  enabled_tools?: string[];
+  created_at: string;
+}
+
+export interface Order {
+  id: string;
+  team_id: string;
+  customer_id?: string;
+  customer?: Customer;
+  conversation_id?: string;
+  conversation?: Conversation;
+  status: OrderStatus;
+  total?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  order_items?: OrderItem[];
+}
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  knowledge_row_id?: string;
+  product_name: string;
+  sku?: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
   created_at: string;
 }
 
