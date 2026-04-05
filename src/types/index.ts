@@ -45,6 +45,8 @@ export interface Customer {
   channel: ChannelType;
   channel_id?: string;
   notes?: string;
+  assigned_to?: string;
+  assigned_profile?: Profile;
   created_at: string;
   updated_at: string;
 }

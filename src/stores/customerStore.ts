@@ -47,6 +47,7 @@ interface CustomerState {
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
   importFromExcel: (teamId: string, data: Omit<Customer, 'id' | 'created_at' | 'updated_at'>[]) => Promise<void>;
+  setCustomers: (customers: Customer[]) => void;
   setSearchQuery: (query: string) => void;
 }
 
@@ -60,7 +61,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
     try {
       const { data, error } = await supabase
         .from('customers')
-        .select('*')
+        .select('*, assigned_profile:profiles(*)')
         .eq('team_id', teamId)
         .order('created_at', { ascending: false });
       if (error) throw error;
@@ -158,6 +159,10 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
     } finally {
       set({ loading: false });
     }
+  },
+
+  setCustomers: (customers: Customer[]) => {
+    set({ customers });
   },
 
   setSearchQuery: (query: string) => {
