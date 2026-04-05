@@ -2,7 +2,7 @@
 
 import type { Customer } from '@/types';
 import { motion } from 'framer-motion';
-import { Search, Pencil, Trash2, Users } from 'lucide-react';
+import { Search, Pencil, Trash2, Users, MessageSquare, UserCheck } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -26,6 +26,8 @@ interface CustomerTableProps {
   customers: Customer[];
   onEdit: (customer: Customer) => void;
   onDelete: (customer: Customer) => void;
+  onAssignVendor?: (customer: Customer) => void;
+  onStartConversation?: (customer: Customer) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
 }
@@ -34,6 +36,8 @@ function CustomerTable({
   customers,
   onEdit,
   onDelete,
+  onAssignVendor,
+  onStartConversation,
   searchQuery,
   onSearchChange,
 }: CustomerTableProps) {
@@ -156,12 +160,33 @@ function CustomerTable({
                     {/* Acciones */}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
+                        {onStartConversation && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={<MessageSquare className="h-4 w-4 text-primary-500" />}
+                            onClick={() => onStartConversation(customer)}
+                            aria-label={`Iniciar conversación con ${customer.name}`}
+                            title="Iniciar conversación"
+                          />
+                        )}
+                        {onAssignVendor && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={<UserCheck className="h-4 w-4 text-violet-500" />}
+                            onClick={() => onAssignVendor(customer)}
+                            aria-label={`Asignar vendedor a ${customer.name}`}
+                            title="Asignar vendedor"
+                          />
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
                           icon={<Pencil className="h-4 w-4" />}
                           onClick={() => onEdit(customer)}
                           aria-label={`Editar ${customer.name}`}
+                          title="Editar"
                         />
                         <Button
                           variant="ghost"
@@ -169,6 +194,7 @@ function CustomerTable({
                           icon={<Trash2 className="h-4 w-4 text-danger-500" />}
                           onClick={() => onDelete(customer)}
                           aria-label={`Eliminar ${customer.name}`}
+                          title="Eliminar"
                         />
                       </div>
                     </td>
