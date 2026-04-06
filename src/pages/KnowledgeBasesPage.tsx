@@ -11,6 +11,8 @@ import {
   ChevronUp,
   Download,
   FileSpreadsheet,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Card } from '@/components/ui/Card';
@@ -95,6 +97,9 @@ export default function KnowledgeBasesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showUploader, setShowUploader] = useState<'free' | 'product-template' | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState('');
 
   // ---------------------------------------------------------------------------
   // Load from Supabase
@@ -153,9 +158,14 @@ export default function KnowledgeBasesPage() {
   // ---------------------------------------------------------------------------
 
   const handleUpload = async (payload: UploadPayload) => {
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadMessage('Creando base de datos...');
+
     if (isSupabaseConfigured && teamId) {
       try {
         // 1. Create the knowledge base record
+        setUploadProgress(10);
         const { data: kb, error: kbErr } = await supabase
           .from('knowledge_bases')
           .insert({
@@ -171,6 +181,8 @@ export default function KnowledgeBasesPage() {
         if (kbErr) throw kbErr;
 
         // 2. Insert column descriptions
+        setUploadProgress(25);
+        setUploadMessage('Guardando columnas...');
         const colRows = payload.columns.map((col) => ({
           knowledge_base_id: kb.id,
           column_name: col.name,
@@ -185,8 +197,15 @@ export default function KnowledgeBasesPage() {
 
         // 3. Insert actual row data in batches
         if (payload.data.length > 0) {
+          setUploadMessage('Subiendo datos...');
           const BATCH_SIZE = 500;
+          const totalBatches = Math.ceil(payload.data.length / BATCH_SIZE);
           for (let i = 0; i < payload.data.length; i += BATCH_SIZE) {
+            const batchIndex = Math.floor(i / BATCH_SIZE);
+            const progress = 30 + Math.round((batchIndex / totalBatches) * 60);
+            setUploadProgress(progress);
+            setUploadMessage(`Subiendo datos... (${Math.min(i + BATCH_SIZE, payload.data.length)}/${payload.data.length} filas)`);
+
             const batch = payload.data.slice(i, i + BATCH_SIZE).map((row) => ({
               knowledge_base_id: kb.id,
               row_data: row,
@@ -200,16 +219,29 @@ export default function KnowledgeBasesPage() {
           }
         }
 
+        setUploadProgress(95);
+        setUploadMessage('Finalizando...');
+
         const newKb: KnowledgeBaseWithColumns = {
           ...(kb as KnowledgeBase),
           columns: (insertedCols as KnowledgeColumn[]) ?? [],
         };
         setKnowledgeBases((prev) => [newKb, ...prev]);
+        setUploadProgress(100);
+        setUploadMessage('Base de datos cargada correctamente');
       } catch (err) {
         console.error('Error uploading knowledge base:', err);
+        setUploadMessage('Error al cargar la base de datos');
       }
     } else {
-      // Mock mode
+      // Mock mode – simulate progress
+      setUploadProgress(30);
+      setUploadMessage('Procesando datos...');
+      await new Promise((r) => setTimeout(r, 600));
+      setUploadProgress(70);
+      setUploadMessage('Guardando filas...');
+      await new Promise((r) => setTimeout(r, 600));
+
       const mockKb: KnowledgeBaseWithColumns = {
         id: `kb-${Date.now()}`,
         team_id: teamId ?? 'team-1',
@@ -228,8 +260,17 @@ export default function KnowledgeBasesPage() {
         })),
       };
       setKnowledgeBases((prev) => [mockKb, ...prev]);
+      setUploadProgress(100);
+      setUploadMessage('Base de datos cargada correctamente');
     }
-    setShowUploader(null);
+
+    // Keep success state visible briefly then clean up
+    setTimeout(() => {
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadMessage('');
+      setShowUploader(null);
+    }, 1500);
   };
 
   const handleDelete = async (id: string) => {
@@ -316,9 +357,50 @@ export default function KnowledgeBasesPage() {
         </Button>
       </div>
 
+      {/* Upload progress bar */}
+      <AnimatePresence>
+        {uploading && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25 }}
+          >
+            <Card className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {uploadProgress < 100 ? (
+                    <Loader2 className="h-5 w-5 text-primary-500 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-5 w-5 text-accent-500" />
+                  )}
+                  <span className="text-sm font-medium text-surface-700">
+                    {uploadMessage}
+                  </span>
+                </div>
+                <span className="text-sm font-semibold text-surface-600">
+                  {uploadProgress}%
+                </span>
+              </div>
+              <div className="h-2.5 w-full rounded-full bg-surface-100 overflow-hidden">
+                <motion.div
+                  className={cn(
+                    'h-full rounded-full transition-colors duration-300',
+                    uploadProgress === 100 ? 'bg-accent-500' : 'bg-primary-500'
+                  )}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${uploadProgress}%` }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
+                />
+              </div>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Uploader overlay */}
       <AnimatePresence>
-        {showUploader && (
+        {showUploader && !uploading && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}

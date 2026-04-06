@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Package,
   X,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +49,8 @@ function OrdersPage() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const loadOrders = useCallback(async () => {
     if (!isSupabaseConfigured || !teamId) {
@@ -98,10 +101,27 @@ function OrdersPage() {
       const q = searchQuery.toLowerCase();
       const customerName = (o.customer as { name?: string } | null)?.name?.toLowerCase() ?? '';
       const shortId = o.id.slice(0, 8).toLowerCase();
-      return customerName.includes(q) || shortId.includes(q);
+      if (!customerName.includes(q) && !shortId.includes(q)) return false;
+    }
+    if (dateFrom) {
+      const orderDate = new Date(o.created_at).toISOString().slice(0, 10);
+      if (orderDate < dateFrom) return false;
+    }
+    if (dateTo) {
+      const orderDate = new Date(o.created_at).toISOString().slice(0, 10);
+      if (orderDate > dateTo) return false;
     }
     return true;
   });
+
+  const hasActiveFilters = filterStatus !== 'all' || searchQuery || dateFrom || dateTo;
+
+  const clearAllFilters = () => {
+    setFilterStatus('all');
+    setSearchQuery('');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   const getStatusLabel = (status: string) => {
     return ORDER_STATUSES.find((s) => s.id === status)?.label ?? status;
@@ -161,38 +181,87 @@ function OrdersPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400" />
-          <input
-            type="text"
-            placeholder="Buscar por cliente o ID..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-surface-200 bg-white pl-10 pr-3 py-2 text-sm text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-          />
-          {searchQuery && (
+      <div className="space-y-3">
+        {/* Search + date row */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400" />
+            <input
+              type="text"
+              placeholder="Buscar por cliente o ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-lg border border-surface-200 bg-white pl-10 pr-3 py-2 text-sm text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Date filters */}
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-surface-400 shrink-0" />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm text-surface-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+              title="Desde"
+            />
+            <span className="text-sm text-surface-400">a</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm text-surface-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+              title="Hasta"
+            />
+          </div>
+
+          {/* Clear all filters */}
+          {hasActiveFilters && (
             <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400 hover:text-surface-600"
+              onClick={clearAllFilters}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm text-surface-500 hover:bg-surface-50 hover:text-surface-700 transition-colors shrink-0"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3.5 w-3.5" />
+              Limpiar filtros
             </button>
           )}
         </div>
 
-        {/* Status filter */}
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm text-surface-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-        >
-          <option value="all">Todos los estados</option>
+        {/* Status filter buttons */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setFilterStatus('all')}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
+              filterStatus === 'all'
+                ? 'bg-surface-800 text-white border-surface-800'
+                : 'bg-white text-surface-600 border-surface-200 hover:bg-surface-50'
+            }`}
+          >
+            Todos
+          </button>
           {ORDER_STATUSES.map((s) => (
-            <option key={s.id} value={s.id}>{s.label}</option>
+            <button
+              key={s.id}
+              onClick={() => setFilterStatus(filterStatus === s.id ? 'all' : s.id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
+                filterStatus === s.id
+                  ? s.color + ' border-current'
+                  : 'bg-white text-surface-600 border-surface-200 hover:bg-surface-50'
+              }`}
+            >
+              {s.label}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       {/* Orders table */}
