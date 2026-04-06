@@ -21,6 +21,8 @@ interface CustomerFormProps {
     email: string;
     phone: string;
     channel: ChannelType;
+    rfc: string;
+    delivery_address: string;
     notes: string;
   }) => void;
   onCancel: () => void;
@@ -32,6 +34,8 @@ function CustomerForm({ customer, onSubmit, onCancel, loading }: CustomerFormPro
   const [email, setEmail] = useState(customer?.email ?? '');
   const [phone, setPhone] = useState(customer?.phone ?? '');
   const [channel, setChannel] = useState<ChannelType>(customer?.channel ?? 'whatsapp');
+  const [rfc, setRfc] = useState(customer?.rfc ?? '');
+  const [deliveryAddress, setDeliveryAddress] = useState(customer?.delivery_address ?? '');
   const [notes, setNotes] = useState(customer?.notes ?? '');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -59,6 +63,8 @@ function CustomerForm({ customer, onSubmit, onCancel, loading }: CustomerFormPro
       email: email.trim(),
       phone: phone.trim(),
       channel,
+      rfc: rfc.trim(),
+      delivery_address: deliveryAddress.trim(),
       notes: notes.trim(),
     });
   }
@@ -96,6 +102,21 @@ function CustomerForm({ customer, onSubmit, onCancel, loading }: CustomerFormPro
         options={channelOptions}
         value={channel}
         onChange={(e) => setChannel(e.target.value as ChannelType)}
+      />
+
+      <Input
+        label="RFC"
+        placeholder="XAXX010101000"
+        value={rfc}
+        onChange={(e) => setRfc(e.target.value)}
+      />
+
+      <Textarea
+        label="Dirección de entrega"
+        placeholder="Calle, número, colonia, ciudad, estado, CP"
+        value={deliveryAddress}
+        onChange={(e) => setDeliveryAddress(e.target.value)}
+        rows={2}
       />
 
       <Textarea
