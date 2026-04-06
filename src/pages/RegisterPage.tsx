@@ -2,9 +2,10 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, Zap, Users, Briefcase, Hash } from 'lucide-react';
+import { Mail, Lock, User, Zap, Users, Briefcase, Hash, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { GoogleIcon } from '@/components/ui/GoogleIcon';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -21,6 +22,8 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [teamCode, setTeamCode] = useState('');
   const [error, setError] = useState('');
+  const [teamCodeError, setTeamCodeError] = useState('');
+  const [showTeamCodeErrorModal, setShowTeamCodeErrorModal] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [joiningLoading, setJoiningLoading] = useState(false);
 
@@ -70,7 +73,8 @@ export default function RegisterPage() {
         if (msg.includes('Ya existe')) {
           setError(msg);
         } else if (msg.includes('invitación') || msg.includes('invite') || msg.includes('Código')) {
-          setError('Código de equipo inválido. Verifica con tu gerente.');
+          setTeamCodeError('El código de equipo que ingresaste no es válido o no existe. Verifica con tu gerente que el código sea correcto e inténtalo de nuevo.');
+          setShowTeamCodeErrorModal(true);
         } else {
           setError('Error al crear la cuenta. Inténtalo de nuevo.');
         }
@@ -353,6 +357,32 @@ export default function RegisterPage() {
           </p>
         </div>
       </motion.div>
+
+      {/* Team code error modal */}
+      <Modal
+        isOpen={showTeamCodeErrorModal}
+        onClose={() => setShowTeamCodeErrorModal(false)}
+        size="sm"
+      >
+        <div className="flex flex-col items-center text-center py-2">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-danger-50 mb-4">
+            <AlertTriangle className="h-7 w-7 text-danger-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-surface-900 mb-2">
+            Código de equipo inválido
+          </h3>
+          <p className="text-sm text-surface-500 leading-relaxed mb-6">
+            {teamCodeError}
+          </p>
+          <Button
+            onClick={() => setShowTeamCodeErrorModal(false)}
+            size="md"
+            className="w-full"
+          >
+            Intentar de nuevo
+          </Button>
+        </div>
+      </Modal>
     </motion.div>
   );
 }
