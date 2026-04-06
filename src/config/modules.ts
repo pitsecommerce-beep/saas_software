@@ -69,15 +69,15 @@ export const AI_PROVIDERS = [
 ];
 
 export const ORDER_STATUSES = [
-  { id: 'curioso', label: 'Curioso', color: 'bg-gray-100 text-gray-700' },
-  { id: 'cotizando', label: 'Cotizando', color: 'bg-blue-100 text-blue-700' },
-  { id: 'pendiente_pago', label: 'Pendiente de Pago', color: 'bg-yellow-100 text-yellow-700' },
-  { id: 'pendiente_surtir', label: 'Pendiente de Surtir', color: 'bg-orange-100 text-orange-700' },
-  { id: 'pendiente_enviar', label: 'Pendiente de Enviar', color: 'bg-purple-100 text-purple-700' },
-  { id: 'enviado', label: 'Enviado', color: 'bg-indigo-100 text-indigo-700' },
-  { id: 'entregado', label: 'Entregado', color: 'bg-green-100 text-green-700' },
-  { id: 'cancelado', label: 'Cancelado', color: 'bg-red-100 text-red-700' },
-  { id: 'requiere_atencion', label: 'Requiere Atención', color: 'bg-red-200 text-red-800' },
+  { id: 'curioso', label: 'Curioso', color: 'bg-gray-100 text-gray-700 border-gray-200' },
+  { id: 'cotizando', label: 'Cotizando', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { id: 'pendiente_pago', label: 'Pendiente de Pago', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  { id: 'pendiente_surtir', label: 'Pendiente de Surtir', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+  { id: 'pendiente_enviar', label: 'Pendiente de Enviar', color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  { id: 'enviado', label: 'Enviado', color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+  { id: 'entregado', label: 'Entregado', color: 'bg-green-100 text-green-700 border-green-200' },
+  { id: 'cancelado', label: 'Cancelado', color: 'bg-red-100 text-red-700 border-red-200' },
+  { id: 'requiere_atencion', label: 'Requiere Atención', color: 'bg-red-200 text-red-800 border-red-300' },
 ] as const;
 
 export const CHANNELS: { id: string; label: string; color: string }[] = [

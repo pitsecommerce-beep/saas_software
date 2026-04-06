@@ -39,18 +39,6 @@ interface OrderRow {
   }[];
 }
 
-const statusBadgeVariant: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
-  curioso: 'neutral',
-  cotizando: 'info',
-  pendiente_pago: 'warning',
-  pendiente_surtir: 'warning',
-  pendiente_enviar: 'info',
-  enviado: 'info',
-  entregado: 'success',
-  cancelado: 'danger',
-  requiere_atencion: 'danger',
-};
-
 function OrdersPage() {
   const { profile } = useAuthStore();
   const teamId = profile?.team_id;
@@ -117,6 +105,10 @@ function OrdersPage() {
 
   const getStatusLabel = (status: string) => {
     return ORDER_STATUSES.find((s) => s.id === status)?.label ?? status;
+  };
+
+  const getStatusColor = (status: string) => {
+    return ORDER_STATUSES.find((s) => s.id === status)?.color ?? 'bg-gray-100 text-gray-700';
   };
 
   const formatDate = (dateStr: string) => {
@@ -246,7 +238,7 @@ function OrdersPage() {
                     </span>
                     <span className="text-sm text-surface-600">{channelLabel}</span>
                     <div>
-                      <Badge variant={statusBadgeVariant[order.status] ?? 'neutral'} size="sm">
+                      <Badge size="sm" className={getStatusColor(order.status)}>
                         {getStatusLabel(order.status)}
                       </Badge>
                     </div>
