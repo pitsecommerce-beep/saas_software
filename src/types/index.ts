@@ -44,6 +44,8 @@ export interface Customer {
   phone?: string;
   channel: ChannelType;
   channel_id?: string;
+  rfc?: string;
+  delivery_address?: string;
   notes?: string;
   assigned_to?: string;
   assigned_profile?: Profile;

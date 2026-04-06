@@ -128,6 +128,8 @@ export default function CustomersPage() {
     email: string;
     phone: string;
     channel: ChannelType;
+    rfc: string;
+    delivery_address: string;
     notes: string;
   }) {
     if (!team?.id) return;
@@ -140,6 +142,8 @@ export default function CustomersPage() {
           email: data.email || undefined,
           phone: data.phone || undefined,
           channel: data.channel,
+          rfc: data.rfc || undefined,
+          delivery_address: data.delivery_address || undefined,
           notes: data.notes || undefined,
         });
       } else {
@@ -149,6 +153,8 @@ export default function CustomersPage() {
           email: data.email || undefined,
           phone: data.phone || undefined,
           channel: data.channel,
+          rfc: data.rfc || undefined,
+          delivery_address: data.delivery_address || undefined,
           notes: data.notes || undefined,
         });
       }

@@ -44,6 +44,8 @@ CREATE TABLE customers (
   phone TEXT,
   channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'messenger')),
   channel_id TEXT,
+  rfc TEXT,
+  delivery_address TEXT,
   notes TEXT,
   assigned_to UUID REFERENCES profiles(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
