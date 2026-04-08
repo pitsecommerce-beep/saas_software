@@ -973,12 +973,7 @@ export function extractMessageBlocks(text: string): MessageBlock[] {
   return blocks;
 }
 
-export function extractImageUrls(text: string): { cleanText: string; imageUrls: string[] } {
-  const imageUrlRegex = /https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?/gi;
-  const imageUrls = text.match(imageUrlRegex) ?? [];
-  const cleanText = text.replace(imageUrlRegex, '').replace(/\n{3,}/g, '\n\n').trim();
-  return { cleanText, imageUrls };
-}
+
 
 async function sendYCloudMessageBlocks(from: string, to: string, blocks: MessageBlock[]): Promise<void> {
   const apiKey = process.env.YCLOUD_API_KEY;
@@ -1015,58 +1010,3 @@ async function sendYCloudMessageBlocks(from: string, to: string, blocks: Message
   }
 }
 
-async function sendYCloudMessage(from: string, to: string, text: string, imageUrls?: string[]): Promise<void> {
-  const apiKey = process.env.YCLOUD_API_KEY;
-  if (!apiKey) {
-    console.error('YCLOUD_API_KEY not configured');
-    return;
-  }
-
-  try {
-    if (text) {
-      const response = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-        },
-        body: JSON.stringify({
-          from,
-          to,
-          type: 'text',
-          text: { body: text },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`YCloud API error (${response.status}):`, errorBody);
-      }
-    }
-
-    if (imageUrls?.length) {
-      for (const url of imageUrls) {
-        const imgResponse = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': apiKey,
-          },
-          body: JSON.stringify({
-            from,
-            to,
-            type: 'image',
-            image: { link: url },
-          }),
-        });
-
-        if (!imgResponse.ok) {
-          const errorBody = await imgResponse.text();
-          console.error(`YCloud API image error (${imgResponse.status}):`, errorBody);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error sending YCloud message:', err);
-  }
-}
