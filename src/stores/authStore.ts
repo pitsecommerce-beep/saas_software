@@ -52,6 +52,7 @@ interface AuthState {
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   fetchTeam: () => Promise<void>;
+  validateTeamCode: (inviteCode: string) => Promise<boolean>;
   joinTeam: (inviteCode: string) => Promise<void>;
 }
 
@@ -366,6 +367,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (err) {
       console.error('fetchTeam unexpected error:', err);
       set({ team: null });
+    }
+  },
+
+  validateTeamCode: async (inviteCode: string): Promise<boolean> => {
+    if (!isSupabaseConfigured) return true;
+    try {
+      const { data: teamRows, error } = await supabase
+        .rpc('get_team_by_invite_code', { p_invite_code: inviteCode });
+      const team = Array.isArray(teamRows) ? teamRows[0] : teamRows;
+      return !error && !!team;
+    } catch {
+      return false;
     }
   },
 
