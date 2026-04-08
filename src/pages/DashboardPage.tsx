@@ -109,18 +109,36 @@ function DashboardPage() {
       // Active conversations
       const activeConvs = convs.filter((c) => c.status !== 'closed').length;
 
-      // Fetch customers count
-      const { count: customerCount } = await supabase
-        .from('customers')
-        .select('id', { count: 'exact', head: true })
-        .eq('team_id', teamId);
+      // Fetch independent queries in parallel
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-      // Fetch messages count for response time approximation
-      const { data: msgData } = await supabase
-        .from('messages')
-        .select('conversation_id, sender_type, created_at')
-        .in('conversation_id', convs.map((c) => c.id))
-        .order('created_at', { ascending: true });
+      const [customerResult, messagesResult, profilesResult, ordersResult] = await Promise.all([
+        supabase
+          .from('customers')
+          .select('id', { count: 'exact', head: true })
+          .eq('team_id', teamId),
+        supabase
+          .from('messages')
+          .select('conversation_id, sender_type, created_at')
+          .in('conversation_id', convs.map((c) => c.id))
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('profiles')
+          .select('id, full_name, role')
+          .eq('team_id', teamId)
+          .in('role', ['vendedor', 'gerente']),
+        supabase
+          .from('orders')
+          .select('id, total, status')
+          .eq('team_id', teamId)
+          .gte('created_at', monthStart),
+      ]);
+
+      const { count: customerCount } = customerResult;
+      const { data: msgData } = messagesResult;
+      const { data: teamProfiles } = profilesResult;
+      const { data: monthOrders } = ordersResult;
 
       // Calculate average response time (time between customer message and next AI/agent response)
       let totalResponseTime = 0;
@@ -206,12 +224,6 @@ function DashboardPage() {
       setChannelData(Object.entries(channelCounts).map(([channel, count]) => ({ channel, count })));
 
       // Vendor performance
-      const { data: teamProfiles } = await supabase
-        .from('profiles')
-        .select('id, full_name, role')
-        .eq('team_id', teamId)
-        .in('role', ['vendedor', 'gerente']);
-
       if (teamProfiles) {
         const vendorStats = teamProfiles.map((p) => {
           const assigned = convs.filter((c) => c.assigned_to === p.id);
@@ -227,14 +239,6 @@ function DashboardPage() {
       }
 
       // Order metrics for current month
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const { data: monthOrders } = await supabase
-        .from('orders')
-        .select('id, total, status')
-        .eq('team_id', teamId)
-        .gte('created_at', monthStart);
-
       const ordersThisMonth = monthOrders?.length ?? 0;
       const totalSold = (monthOrders ?? [])
         .filter((o) => o.status !== 'cancelado')

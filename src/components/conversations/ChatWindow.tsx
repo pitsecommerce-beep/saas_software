@@ -8,6 +8,8 @@ import {
   Sparkles,
   UserPlus,
   Bot,
+  CreditCard,
+  X,
 } from 'lucide-react';
 import type { Conversation, Message, ChannelType } from '@/types';
 import { Badge } from '@/components/ui/Badge';
@@ -37,6 +39,10 @@ function ChatWindow({
 }: ChatWindowProps) {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDesc, setPaymentDesc] = useState('');
+  const [paymentSending, setPaymentSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -66,6 +72,45 @@ function ChatWindow({
     if (conversation.is_ai_enabled) {
       setIsTyping(true);
       setTimeout(() => setIsTyping(false), 1500);
+    }
+  };
+
+  const handleSendPaymentLink = async () => {
+    const amount = parseFloat(paymentAmount);
+    if (!amount || amount <= 0 || !paymentDesc.trim()) return;
+
+    setPaymentSending(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) {
+        console.error('VITE_API_URL not configured');
+        return;
+      }
+      const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/payments/create-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation_id: conversation.id,
+          amount,
+          description: paymentDesc.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        console.error('Payment link error:', errData);
+        return;
+      }
+      const data = await response.json() as { payment_url?: string };
+      if (data.payment_url) {
+        onSendMessage(`Aquí está tu link de pago: ${data.payment_url}`);
+      }
+      setShowPaymentForm(false);
+      setPaymentAmount('');
+      setPaymentDesc('');
+    } catch (err) {
+      console.error('Error creating payment link:', err);
+    } finally {
+      setPaymentSending(false);
     }
   };
 
@@ -201,6 +246,58 @@ function ChatWindow({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Payment form */}
+      <AnimatePresence>
+        {showPaymentForm && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-surface-100 bg-surface-50 shrink-0"
+          >
+            <div className="px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-surface-700">Generar link de pago</span>
+                <button onClick={() => setShowPaymentForm(false)} className="text-surface-400 hover:text-surface-600">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  placeholder="Monto (MXN)"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="w-28 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Descripción del cobro"
+                  value={paymentDesc}
+                  onChange={(e) => setPaymentDesc(e.target.value)}
+                  className="flex-1 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendPaymentLink}
+                  disabled={!paymentAmount || !paymentDesc.trim() || paymentSending}
+                  className={cn(
+                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    paymentAmount && paymentDesc.trim() && !paymentSending
+                      ? 'bg-green-500 text-white hover:bg-green-600'
+                      : 'bg-surface-200 text-surface-400 cursor-not-allowed'
+                  )}
+                >
+                  {paymentSending ? 'Enviando...' : 'Enviar'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input */}
       <form
         onSubmit={handleSubmit}
@@ -219,6 +316,21 @@ function ChatWindow({
             'transition-all duration-200'
           )}
         />
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setShowPaymentForm((v) => !v)}
+          className={cn(
+            'flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-200',
+            showPaymentForm
+              ? 'bg-green-500 text-white'
+              : 'bg-surface-100 text-surface-500 hover:bg-surface-200'
+          )}
+          title="Generar link de pago"
+        >
+          <CreditCard className="h-4 w-4" />
+        </motion.button>
         <motion.button
           type="submit"
           whileHover={{ scale: 1.05 }}

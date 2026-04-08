@@ -223,6 +223,46 @@ function AIAgentConfig({ agent, onSubmit, onCancel }: AIAgentConfigProps) {
               </p>
             </div>
           </label>
+          <label className="flex items-start gap-3 cursor-pointer rounded-lg p-2 hover:bg-white transition-colors">
+            <input
+              type="checkbox"
+              checked={enabledTools.includes('consultar_pedido')}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setEnabledTools((prev) => [...prev, 'consultar_pedido']);
+                } else {
+                  setEnabledTools((prev) => prev.filter((t) => t !== 'consultar_pedido'));
+                }
+              }}
+              className="mt-0.5 h-4 w-4 rounded border-surface-300 text-primary-500 focus:ring-primary-500/20"
+            />
+            <div>
+              <span className="text-sm font-medium text-surface-800">Consultar pedido</span>
+              <p className="text-xs text-surface-500 mt-0.5">
+                Permite al agente buscar el estado de un pedido cuando el cliente proporciona su número de orden.
+              </p>
+            </div>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer rounded-lg p-2 hover:bg-white transition-colors">
+            <input
+              type="checkbox"
+              checked={enabledTools.includes('generar_link_pago')}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setEnabledTools((prev) => [...prev, 'generar_link_pago']);
+                } else {
+                  setEnabledTools((prev) => prev.filter((t) => t !== 'generar_link_pago'));
+                }
+              }}
+              className="mt-0.5 h-4 w-4 rounded border-surface-300 text-primary-500 focus:ring-primary-500/20"
+            />
+            <div>
+              <span className="text-sm font-medium text-surface-800">Generar link de pago</span>
+              <p className="text-xs text-surface-500 mt-0.5">
+                Permite al agente generar links de pago de Mercado Pago o Stripe y enviarlos al cliente durante la conversación. Requiere configurar el proveedor de pagos en la pestaña de Configuración.
+              </p>
+            </div>
+          </label>
         </div>
       </div>
 

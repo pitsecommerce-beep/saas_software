@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send } from 'lucide-react';
+import { List, LayoutGrid, Plus, MessageSquare, Search, MessageCircle, MessagesSquare, Send, BellDot } from 'lucide-react';
 import { useDemoStore } from '@/stores/demoStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { Conversation, Message, ConversationStatus, Customer, ChannelType, Profile } from '@/types';
@@ -162,6 +162,9 @@ export default function ConversationsPage() {
   const [newConvChannel, setNewConvChannel] = useState<ChannelType | null>(null);
   const [newConvMessage, setNewConvMessage] = useState('');
   const [newConvSending, setNewConvSending] = useState(false);
+
+  // Unread filter
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
 
   // Vendor assignment state
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
@@ -348,6 +351,16 @@ export default function ConversationsPage() {
     );
   }, [newConvSearch, customers]);
 
+  const unreadCount = useMemo(
+    () => conversations.filter((c) => (c.unread_count ?? 0) > 0).length,
+    [conversations]
+  );
+
+  const displayedConversations = useMemo(
+    () => showUnreadOnly ? conversations.filter((c) => (c.unread_count ?? 0) > 0) : conversations,
+    [conversations, showUnreadOnly]
+  );
+
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeConversationId) ?? null,
     [conversations, activeConversationId]
@@ -431,6 +444,17 @@ export default function ConversationsPage() {
       if (viewMode === 'canvas') {
         setChatModalOpen(true);
       }
+      // Mark conversation as read
+      if (isSupabaseConfigured) {
+        supabase
+          .from('conversations')
+          .update({ unread_count: 0 })
+          .eq('id', id)
+          .then(() => {});
+      }
+      setConversations((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
+      );
     },
     [viewMode]
   );
@@ -638,11 +662,33 @@ export default function ConversationsPage() {
         <div>
           <h1 className="text-xl font-bold text-surface-900">Conversaciones</h1>
           <p className="text-sm text-surface-500 mt-0.5">
-            {conversations.length} conversaciones totales
+            {showUnreadOnly ? `${displayedConversations.length} no leidas de ${conversations.length}` : `${conversations.length} conversaciones totales`}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Unread filter */}
+          <button
+            onClick={() => setShowUnreadOnly((prev) => !prev)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-200 border',
+              showUnreadOnly
+                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                : 'border-surface-200 bg-surface-50 text-surface-500 hover:text-surface-700'
+            )}
+          >
+            <BellDot className="h-4 w-4" />
+            No leidas
+            {unreadCount > 0 && (
+              <span className={cn(
+                'ml-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full',
+                showUnreadOnly ? 'bg-primary-500 text-white' : 'bg-surface-200 text-surface-600'
+              )}>
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
           {/* View toggle */}
           <div className="flex items-center rounded-lg border border-surface-200 bg-surface-50 p-0.5">
             <button
@@ -696,7 +742,7 @@ export default function ConversationsPage() {
               {/* Conversation list panel */}
               <div className="w-1/3 min-w-[320px] max-w-[400px] h-full">
                 <ConversationList
-                  conversations={conversations}
+                  conversations={displayedConversations}
                   activeId={activeConversationId}
                   onSelect={handleSelect}
                   onDelete={handleDeleteConversation}
@@ -738,7 +784,7 @@ export default function ConversationsPage() {
               className="h-full p-4"
             >
               <ConversationCanvas
-                conversations={conversations}
+                conversations={displayedConversations}
                 onSelect={handleSelect}
                 onStatusChange={handleStatusChange}
                 onDelete={handleDeleteConversation}
