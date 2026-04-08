@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { handleYCloudWebhook } from './webhook';
 import { handleSendMessage } from './outbound';
+import { handleCreatePaymentLink } from './payments';
 import { isConfigured } from './supabase';
 
 const app = express();
@@ -33,6 +34,9 @@ app.post('/api/webhooks/ycloud', handleYCloudWebhook);
 
 // Outbound message endpoint — send messages from UI to customer via YCloud
 app.post('/api/messages/send', handleSendMessage);
+
+// Payment link endpoint — generate and send payment links
+app.post('/api/payments/create-link', handleCreatePaymentLink);
 
 app.listen(PORT, () => {
   console.log(`Orkesta webhook server running on port ${PORT}`);

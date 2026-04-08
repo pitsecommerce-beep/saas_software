@@ -219,7 +219,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   // Fetch knowledge schema and search for relevant rows
   console.log(`[KB] Searching knowledge for team=${teamId}, query="${messageText}"`);
   const knowledgeSchema = await getKnowledgeSchema(teamId);
-  const searchResults = await searchKnowledgeRows(teamId, messageText, 15);
+  const searchResults = await searchKnowledgeRows(teamId, messageText, 10);
 
   let contextForAI = knowledgeSchema;
   if (searchResults) {
@@ -237,8 +237,20 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     return;
   }
 
+  // Current Mexico time for AI context
+  const currentDateTime = new Date().toLocaleString('es-MX', {
+    timeZone: 'America/Mexico_City',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
   // Get AI response (may include tool calls)
-  const aiResponse = await getAIResponse(agent, sanitizedMessages, contextForAI);
+  const aiResponse = await getAIResponse(agent, sanitizedMessages, contextForAI, currentDateTime);
 
   if (!aiResponse) {
     console.warn('AI returned empty response');
@@ -253,7 +265,8 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     sanitizedMessages,
     teamId,
     customer.id,
-    conversation.id
+    conversation.id,
+    currentDateTime
   );
 
   if (!finalText) {
@@ -261,7 +274,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     return;
   }
 
-  // 6. Save AI response as message
+  // 6. Save AI response as message (full text with URLs)
   await supabase.from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'ai',
@@ -269,9 +282,9 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     metadata: { agent_id: agent.id, agent_name: agent.name },
   });
 
-  // 7. Send response via YCloud API
-  const { cleanText, imageUrls } = extractImageUrls(finalText);
-  await sendYCloudMessage(recipientPhone, senderPhone, cleanText, imageUrls);
+  // 7. Send response via YCloud API as interleaved text + image blocks
+  const blocks = extractMessageBlocks(finalText);
+  await sendYCloudMessageBlocks(recipientPhone, senderPhone, blocks);
 
   // Update conversation
   await supabase
@@ -333,14 +346,15 @@ async function processAIResponse(
   messages: { sender_type: string; content: string; created_at: string }[],
   teamId: string,
   customerId: string,
-  conversationId: string
+  conversationId: string,
+  currentDateTime?: string
 ): Promise<string | null> {
   // If no tool calls, just return the text
   if (!response.hasToolCalls) {
     return getTextFromParts(response.parts);
   }
 
-  const systemPrompt = buildSystemPrompt(agent.system_prompt, knowledgeContext, agent.enabled_tools);
+  const systemPrompt = buildSystemPrompt(agent.system_prompt, knowledgeContext, agent.enabled_tools, currentDateTime);
 
   // Build provider-specific message history for continuation
   const conversationHistory = messages.map((m) => ({
@@ -378,6 +392,19 @@ async function processAIResponse(
           result = await executeConsultarDisponibilidad(
             part.toolArgs ?? {},
             teamId
+          );
+          break;
+        case 'consultar_pedido':
+          result = await executeConsultarPedido(
+            part.toolArgs ?? {},
+            teamId
+          );
+          break;
+        case 'generar_link_pago':
+          result = await executeGenerarLinkPago(
+            part.toolArgs ?? {},
+            teamId,
+            conversationId
           );
           break;
         default:
@@ -648,6 +675,170 @@ function formatDisponibilidadResults(
   });
 }
 
+async function executeConsultarPedido(
+  args: Record<string, unknown>,
+  teamId: string
+): Promise<string> {
+  try {
+    const numeroPedido = args.numero_pedido as string;
+    if (!numeroPedido) {
+      return JSON.stringify({ success: false, error: 'No se proporcionó número de pedido' });
+    }
+
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('*, order_items(*), customer:customers(name)')
+      .eq('team_id', teamId)
+      .or(`id.eq.${numeroPedido},id.ilike.${numeroPedido}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !order) {
+      return JSON.stringify({ success: false, encontrado: false, mensaje: `No se encontró un pedido con el número "${numeroPedido}".` });
+    }
+
+    const items = ((order.order_items as Array<Record<string, unknown>>) ?? []).map((item) => ({
+      producto: item.product_name,
+      sku: item.sku,
+      cantidad: item.quantity,
+      precio_unitario: item.unit_price,
+      subtotal: item.subtotal,
+    }));
+
+    const statusLabels: Record<string, string> = {
+      curioso: 'Curioso',
+      cotizando: 'Cotizando',
+      pendiente_pago: 'Pendiente de pago',
+      pendiente_surtir: 'Pendiente de surtir',
+      pendiente_enviar: 'Pendiente de enviar',
+      enviado: 'Enviado',
+      entregado: 'Entregado',
+      cancelado: 'Cancelado',
+      requiere_atencion: 'Requiere atención',
+    };
+
+    return JSON.stringify({
+      success: true,
+      encontrado: true,
+      pedido: {
+        id: order.id,
+        id_corto: (order.id as string).slice(0, 8),
+        estado: statusLabels[order.status as string] ?? order.status,
+        total: order.total,
+        notas: order.notes,
+        cliente: (order.customer as { name?: string } | null)?.name ?? 'Sin cliente',
+        fecha: order.created_at,
+        productos: items,
+      },
+    });
+  } catch (err) {
+    console.error('Error in executeConsultarPedido:', err);
+    return JSON.stringify({ success: false, error: 'Error interno al consultar el pedido' });
+  }
+}
+
+async function executeGenerarLinkPago(
+  args: Record<string, unknown>,
+  teamId: string,
+  conversationId: string
+): Promise<string> {
+  try {
+    const monto = args.monto as number;
+    const descripcion = args.descripcion as string;
+    const orderId = args.order_id as string | undefined;
+
+    if (!monto || monto <= 0) {
+      return JSON.stringify({ success: false, error: 'El monto debe ser mayor a 0' });
+    }
+
+    const { data: settings } = await supabase
+      .from('payment_settings')
+      .select('*')
+      .eq('team_id', teamId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!settings) {
+      return JSON.stringify({
+        success: false,
+        error: 'No hay proveedor de pagos configurado. El gerente debe configurar Mercado Pago o Stripe en la sección de Configuración.',
+      });
+    }
+
+    let paymentUrl = '';
+
+    if (settings.provider === 'mercadopago') {
+      const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.api_key_encrypted}`,
+        },
+        body: JSON.stringify({
+          items: [{
+            title: descripcion,
+            quantity: 1,
+            unit_price: monto,
+            currency_id: 'MXN',
+          }],
+          external_reference: orderId ?? conversationId,
+          auto_return: 'approved',
+        }),
+      });
+      if (!response.ok) {
+        const errBody = await response.text();
+        throw new Error(`Mercado Pago API error: ${errBody}`);
+      }
+      const mpData = await response.json() as { init_point: string };
+      paymentUrl = mpData.init_point;
+    } else if (settings.provider === 'stripe') {
+      const params = new URLSearchParams();
+      params.append('line_items[0][price_data][currency]', 'mxn');
+      params.append('line_items[0][price_data][product_data][name]', descripcion);
+      params.append('line_items[0][price_data][unit_amount]', String(Math.round(monto * 100)));
+      params.append('line_items[0][quantity]', '1');
+      params.append('mode', 'payment');
+      params.append('success_url', 'https://orkesta.app/payment/success');
+      params.append('cancel_url', 'https://orkesta.app/payment/cancel');
+      if (orderId) params.append('metadata[order_id]', orderId);
+
+      const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(settings.api_key_encrypted + ':').toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      });
+      if (!response.ok) {
+        const errBody = await response.text();
+        throw new Error(`Stripe API error: ${errBody}`);
+      }
+      const stripeData = await response.json() as { url: string };
+      paymentUrl = stripeData.url;
+    }
+
+    if (orderId) {
+      await supabase
+        .from('orders')
+        .update({ status: 'pendiente_pago', updated_at: new Date().toISOString() })
+        .eq('id', orderId)
+        .eq('team_id', teamId);
+    }
+
+    return JSON.stringify({
+      success: true,
+      payment_url: paymentUrl,
+      provider: settings.provider,
+      monto,
+      descripcion,
+    });
+  } catch (err) {
+    console.error('Error in executeGenerarLinkPago:', err);
+    return JSON.stringify({ success: false, error: 'Error al generar el link de pago. Verifica la configuración del proveedor.' });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Knowledge base helpers (unchanged from original)
 // ---------------------------------------------------------------------------
@@ -757,11 +948,71 @@ async function searchKnowledgeRows(
 // Message sending helpers
 // ---------------------------------------------------------------------------
 
+export type MessageBlock = { type: 'text'; content: string } | { type: 'image'; url: string };
+
+export function extractMessageBlocks(text: string): MessageBlock[] {
+  const imageUrlRegex = /https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?/gi;
+  const blocks: MessageBlock[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = imageUrlRegex.exec(text)) !== null) {
+    const before = text.slice(lastIndex, match.index).replace(/\n{3,}/g, '\n\n').trim();
+    if (before) {
+      blocks.push({ type: 'text', content: before });
+    }
+    blocks.push({ type: 'image', url: match[0] });
+    lastIndex = match.index + match[0].length;
+  }
+
+  const remaining = text.slice(lastIndex).replace(/\n{3,}/g, '\n\n').trim();
+  if (remaining) {
+    blocks.push({ type: 'text', content: remaining });
+  }
+
+  return blocks;
+}
+
 export function extractImageUrls(text: string): { cleanText: string; imageUrls: string[] } {
   const imageUrlRegex = /https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?/gi;
   const imageUrls = text.match(imageUrlRegex) ?? [];
   const cleanText = text.replace(imageUrlRegex, '').replace(/\n{3,}/g, '\n\n').trim();
   return { cleanText, imageUrls };
+}
+
+async function sendYCloudMessageBlocks(from: string, to: string, blocks: MessageBlock[]): Promise<void> {
+  const apiKey = process.env.YCLOUD_API_KEY;
+  if (!apiKey) {
+    console.error('YCLOUD_API_KEY not configured');
+    return;
+  }
+
+  for (let i = 0; i < blocks.length; i++) {
+    if (i > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    const block = blocks[i];
+    try {
+      const body =
+        block.type === 'text'
+          ? { from, to, type: 'text', text: { body: block.content } }
+          : { from, to, type: 'image', image: { link: block.url } };
+
+      const response = await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`YCloud API error (${response.status}):`, errorBody);
+      }
+    } catch (err) {
+      console.error('Error sending YCloud block:', err);
+    }
+  }
 }
 
 async function sendYCloudMessage(from: string, to: string, text: string, imageUrls?: string[]): Promise<void> {

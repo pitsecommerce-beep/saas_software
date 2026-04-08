@@ -74,6 +74,28 @@ const TOOL_DEFINITIONS: Record<string, { description: string; parameters: Record
       required: ['producto'],
     },
   },
+  consultar_pedido: {
+    description: 'Consulta el estado de un pedido por su número de orden (ID). Usar cuando el cliente proporciona un número de pedido para saber su estado, productos y total.',
+    parameters: {
+      type: 'object',
+      properties: {
+        numero_pedido: { type: 'string', description: 'Número o ID del pedido a consultar' },
+      },
+      required: ['numero_pedido'],
+    },
+  },
+  generar_link_pago: {
+    description: 'Genera un link de pago para que el cliente pague su pedido. Usar después de que el cliente confirme que quiere pagar. Requiere el ID del pedido o el monto y descripción.',
+    parameters: {
+      type: 'object',
+      properties: {
+        order_id: { type: 'string', description: 'ID del pedido (si existe)' },
+        monto: { type: 'number', description: 'Monto total a cobrar en MXN' },
+        descripcion: { type: 'string', description: 'Descripción del cobro' },
+      },
+      required: ['monto', 'descripcion'],
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -131,7 +153,7 @@ function buildGoogleTools(enabledTools?: string[]): Record<string, unknown>[] {
 // System prompt
 // ---------------------------------------------------------------------------
 
-export function buildSystemPrompt(agentPrompt: string, knowledgeContext: string, enabledTools?: string[]): string {
+export function buildSystemPrompt(agentPrompt: string, knowledgeContext: string, enabledTools?: string[], currentDateTime?: string): string {
   let prompt = agentPrompt;
   if (knowledgeContext) {
     prompt += `\n\n--- Base de Conocimiento ---\n${knowledgeContext}`;
@@ -150,8 +172,29 @@ Tienes la capacidad de crear pedidos para los clientes. Sigue estas reglas:
 7. Nunca inventes precios. Siempre usa los precios de la base de conocimiento.`;
   }
 
+  if (enabledTools?.includes('consultar_pedido')) {
+    prompt += `\n\n--- Instrucciones para Consulta de Pedidos ---
+Cuando un cliente pregunte por el estado de su pedido o proporcione un numero de orden, usa la herramienta consultar_pedido.
+1. Pide al cliente su numero de pedido si no lo ha proporcionado.
+2. Usa la herramienta con el numero proporcionado.
+3. Informa al cliente el estado, los productos y el total de su pedido de forma clara.
+4. Si no se encuentra el pedido, pide al cliente que verifique el numero.`;
+  }
+
+  if (enabledTools?.includes('generar_link_pago')) {
+    prompt += `\n\n--- Instrucciones para Links de Pago ---
+Puedes generar links de pago para que el cliente pague directamente.
+1. Solo genera un link de pago cuando el cliente confirme que quiere pagar.
+2. Necesitas el monto y una descripcion del cobro.
+3. Si hay un pedido asociado, incluye el order_id.
+4. Envia el link generado al cliente para que pueda pagar.`;
+  }
+
   prompt += '\n\nIMPORTANTE: Responde de forma concisa y directa, como en una conversacion de WhatsApp. Maximo 2-3 parrafos cortos. No uses markdown, asteriscos ni formato especial.';
   prompt += '\n\nCuando menciones un producto que tiene imagen disponible, incluye la URL completa de la imagen en tu respuesta. No la ocultes ni la modifiques.';
+  if (currentDateTime) {
+    prompt += `\n\nFecha y hora actual (Ciudad de México): ${currentDateTime}`;
+  }
   return prompt;
 }
 
@@ -162,9 +205,10 @@ Tienes la capacidad de crear pedidos para los clientes. Sigue estas reglas:
 export async function getAIResponse(
   agent: AIAgent,
   messages: Message[],
-  knowledgeContext: string
+  knowledgeContext: string,
+  currentDateTime?: string
 ): Promise<AIResponse | null> {
-  const systemPrompt = buildSystemPrompt(agent.system_prompt, knowledgeContext, agent.enabled_tools);
+  const systemPrompt = buildSystemPrompt(agent.system_prompt, knowledgeContext, agent.enabled_tools, currentDateTime);
 
   // Map sender_type to role, then merge consecutive messages with the same role
   const mapped = messages.map((m) => ({

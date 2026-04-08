@@ -15,6 +15,7 @@ import {
   EyeOff,
   Network,
   Trash2,
+  CreditCard,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AIAgent, ChannelAssignment, ChannelType } from '@/types';
@@ -104,13 +105,14 @@ const MOCK_ASSIGNMENTS: ChannelAssignment[] = [
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabId = 'agents' | 'channels' | 'connector' | 'ycloud' | 'general';
+type TabId = 'agents' | 'channels' | 'connector' | 'ycloud' | 'payments' | 'general';
 
 const TABS: { id: TabId; label: string; icon: typeof Bot }[] = [
   { id: 'agents', label: 'Agentes de IA', icon: Bot },
   { id: 'channels', label: 'Canales', icon: MessageCircle },
   { id: 'connector', label: 'Conexiones', icon: Network },
   { id: 'ycloud', label: 'yCloud', icon: Zap },
+  { id: 'payments', label: 'Pagos', icon: CreditCard },
   { id: 'general', label: 'General', icon: Settings },
 ];
 
@@ -183,6 +185,14 @@ function SettingsPage() {
   const [yCloudSaved, setYCloudSaved] = useState(false);
   const isYCloudConnected = yCloudApiKey.length > 0 && yCloudPhoneNumberId.length > 0;
 
+  // Payment settings
+  const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'stripe'>('mercadopago');
+  const [paymentApiKey, setPaymentApiKey] = useState('');
+  const [showPaymentKey, setShowPaymentKey] = useState(false);
+  const [paymentSaved, setPaymentSaved] = useState(false);
+  const [paymentActive, setPaymentActive] = useState(true);
+  const isPaymentConnected = paymentApiKey.length > 0;
+
   const handleSaveYCloud = async () => {
     if (!isSupabaseConfigured || !teamId) return;
     try {
@@ -208,6 +218,30 @@ function SettingsPage() {
     }
   };
 
+  const handleSavePayment = async () => {
+    if (!isSupabaseConfigured || !teamId) return;
+    try {
+      const payload = {
+        team_id: teamId,
+        provider: paymentProvider,
+        api_key_encrypted: paymentApiKey,
+        is_active: paymentActive,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from('payment_settings')
+        .upsert(payload, { onConflict: 'team_id' });
+      if (error) {
+        console.error('Error saving payment settings:', error);
+        return;
+      }
+      setPaymentSaved(true);
+      setTimeout(() => setPaymentSaved(false), 2500);
+    } catch (err) {
+      console.error('Error saving payment settings:', err);
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // Supabase data fetching
   // ---------------------------------------------------------------------------
@@ -217,10 +251,11 @@ function SettingsPage() {
       return;
     }
     try {
-      const [agentsRes, assignRes, yCloudRes] = await Promise.all([
+      const [agentsRes, assignRes, yCloudRes, paymentRes] = await Promise.all([
         supabase.from('ai_agents').select('*').eq('team_id', teamId).order('created_at', { ascending: false }),
         supabase.from('channel_assignments').select('*, agent:ai_agents(*)').eq('team_id', teamId).order('created_at', { ascending: false }),
         supabase.from('ycloud_settings').select('*').eq('team_id', teamId).maybeSingle(),
+        supabase.from('payment_settings').select('*').eq('team_id', teamId).maybeSingle(),
       ]);
       if (agentsRes.data) setAgents(agentsRes.data as AIAgent[]);
       if (assignRes.data) setAssignments(assignRes.data as ChannelAssignment[]);
@@ -229,6 +264,11 @@ function SettingsPage() {
         setYCloudPhoneNumberId(yCloudRes.data.phone_number_id ?? '');
         setYCloudWebhookToken(yCloudRes.data.webhook_token ?? '');
         setYCloudWebhookUrl(yCloudRes.data.webhook_url ?? '');
+      }
+      if (paymentRes.data) {
+        setPaymentProvider(paymentRes.data.provider ?? 'mercadopago');
+        setPaymentApiKey(paymentRes.data.api_key_encrypted ?? '');
+        setPaymentActive(paymentRes.data.is_active ?? true);
       }
     } catch (err) {
       console.error('Failed to load settings data:', err);
@@ -690,6 +730,128 @@ function SettingsPage() {
                       icon={yCloudSaved ? <CheckCircle2 className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
                     >
                       {yCloudSaved ? '¡Guardado!' : 'Guardar configuración'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ---- Payments Tab ---- */}
+            {activeTab === 'payments' && (
+              <div className="space-y-6">
+                <Card>
+                  <div className="flex items-start gap-4">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-green-500 to-green-700 shrink-0">
+                      <CreditCard className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="text-lg font-semibold text-surface-900">Proveedor de Pagos</h3>
+                        {isPaymentConnected ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Conectado
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-100 px-2.5 py-1 text-xs font-medium text-surface-500">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            Sin configurar
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-surface-500 mt-1">
+                        Conecta Mercado Pago o Stripe para que el agente de IA pueda generar links de pago y enviarlos a tus clientes.
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+
+                {!isManager && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <p className="text-sm text-amber-700">
+                      Solo el gerente puede configurar el proveedor de pagos.
+                    </p>
+                  </div>
+                )}
+
+                <Card>
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-green-50">
+                      <Key className="h-4 w-4 text-green-600" />
+                    </div>
+                    <h4 className="text-base font-semibold text-surface-900">Configuración</h4>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-surface-700">Proveedor</label>
+                      <div className="flex gap-2">
+                        {(['mercadopago', 'stripe'] as const).map((prov) => (
+                          <button
+                            key={prov}
+                            type="button"
+                            disabled={!isManager}
+                            onClick={() => setPaymentProvider(prov)}
+                            className={cn(
+                              'flex-1 rounded-xl border-2 py-3 px-4 text-sm font-medium transition-all text-center',
+                              paymentProvider === prov
+                                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                                : 'border-surface-200 bg-white text-surface-600 hover:border-surface-300',
+                              !isManager && 'opacity-60 cursor-not-allowed'
+                            )}
+                          >
+                            {prov === 'mercadopago' ? 'Mercado Pago' : 'Stripe'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-surface-700">
+                        {paymentProvider === 'mercadopago' ? 'Access Token de Mercado Pago' : 'Secret Key de Stripe'}
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showPaymentKey ? 'text' : 'password'}
+                          disabled={!isManager}
+                          placeholder={paymentProvider === 'mercadopago' ? 'APP_USR-...' : 'sk_live_...'}
+                          value={paymentApiKey}
+                          onChange={(e) => setPaymentApiKey(e.target.value)}
+                          className="block w-full rounded-lg border border-surface-200 bg-white px-3.5 py-2.5 pr-12 text-sm text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 disabled:bg-surface-50 disabled:cursor-not-allowed"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPaymentKey((v) => !v)}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-surface-400 hover:text-surface-600 transition-colors"
+                        >
+                          {showPaymentKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-surface-400">
+                        {paymentProvider === 'mercadopago'
+                          ? 'Encuéntralo en Mercado Pago → Tus integraciones → Credenciales de producción → Access Token.'
+                          : 'Encuéntralo en Stripe Dashboard → Developers → API keys → Secret key.'}
+                      </p>
+                    </div>
+
+                    <Toggle
+                      enabled={paymentActive}
+                      onChange={setPaymentActive}
+                      label="Activo"
+                      description="Cuando está activo, el agente de IA puede generar links de pago"
+                    />
+                  </div>
+                </Card>
+
+                {isManager && (
+                  <div className="flex justify-end gap-3">
+                    <Button
+                      onClick={handleSavePayment}
+                      disabled={!paymentApiKey}
+                      icon={paymentSaved ? <CheckCircle2 className="h-4 w-4" /> : <CreditCard className="h-4 w-4" />}
+                    >
+                      {paymentSaved ? '¡Guardado!' : 'Guardar configuración'}
                     </Button>
                   </div>
                 )}
