@@ -13,7 +13,7 @@ type RegistrationRole = 'gerente' | 'vendedor';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register, loginWithGoogle, joinTeam, loading } = useAuthStore();
+  const { register, loginWithGoogle, joinTeam, validateTeamCode, loading } = useAuthStore();
 
   const [role, setRole] = useState<RegistrationRole | null>(null);
   const [fullName, setFullName] = useState('');
@@ -58,15 +58,23 @@ export default function RegisterPage() {
     }
 
     if (role === 'vendedor') {
-      if (!teamCode.trim()) {
+      const code = teamCode.trim().toUpperCase();
+      if (!code) {
         setError('Ingresa el código de equipo que te compartió tu gerente.');
         return;
       }
-      // Register and join team in one flow
+      // Validate the team code BEFORE creating the user to avoid orphan accounts
       setJoiningLoading(true);
       try {
+        const isValid = await validateTeamCode(code);
+        if (!isValid) {
+          setTeamCodeError('El código de equipo que ingresaste no es válido o no existe. Verifica con tu gerente que el código sea correcto e inténtalo de nuevo.');
+          setShowTeamCodeErrorModal(true);
+          setJoiningLoading(false);
+          return;
+        }
         await register(email, password, fullName, 'vendedor');
-        await joinTeam(teamCode.trim().toUpperCase());
+        await joinTeam(code);
         navigate('/dashboard');
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : '';
