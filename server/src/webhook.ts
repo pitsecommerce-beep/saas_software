@@ -228,6 +228,12 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     contextForAI += '\n\n(No se encontraron productos específicos para esta consulta. Informa al cliente que puede proporcionar más detalles como marca, modelo o tipo de pieza.)';
   }
 
+  // Inject active order context so the AI knows about existing orders
+  const activeOrderCtx = await getActiveOrderContext(conversation.id, teamId);
+  if (activeOrderCtx) {
+    contextForAI += '\n\n' + activeOrderCtx;
+  }
+
   console.log(`[KB] Context length: ${contextForAI.length} chars (~${Math.round(contextForAI.length / 4)} tokens), messages: ${recentMessages?.length ?? 0}`);
 
   // Sanitize message history before sending to AI
@@ -381,7 +387,7 @@ async function processAIResponse(
       let result: string;
       switch (part.toolName) {
         case 'crear_pedido':
-          result = await executeCrearPedido(
+          result = await executeCrearPedidoWithGuard(
             part.toolArgs ?? {},
             teamId,
             customerId,
@@ -488,6 +494,119 @@ function getTextFromParts(parts: AIResponsePart[]): string | null {
 // ---------------------------------------------------------------------------
 // Tool executors
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Active order context for AI (Protection 2)
+// ---------------------------------------------------------------------------
+
+async function getActiveOrderContext(conversationId: string, teamId: string): Promise<string | null> {
+  const { data: activeOrders } = await supabase
+    .from('orders')
+    .select('id, total, status, order_items(product_name, sku, quantity, unit_price, subtotal)')
+    .eq('conversation_id', conversationId)
+    .eq('team_id', teamId)
+    .not('status', 'in', '("cancelado","entregado")')
+    .order('created_at', { ascending: false })
+    .limit(3);
+
+  if (!activeOrders || activeOrders.length === 0) return null;
+
+  const sections: string[] = [];
+  for (const order of activeOrders) {
+    const shortId = (order.id as string).slice(0, 8);
+    const items = (order.order_items as Array<{ product_name: string; sku: string | null; quantity: number; unit_price: number; subtotal: number }>) ?? [];
+    const itemLines = items.map(
+      (it) => `  - ${it.product_name}${it.sku ? ` (${it.sku})` : ''} x${it.quantity} — $${it.subtotal.toFixed(2)}`
+    ).join('\n');
+    sections.push(
+      `Ya existe el pedido #${shortId} con estos productos:\n${itemLines}\n  Total: $${(order.total as number).toFixed(2)} | Estado: ${order.status}`
+    );
+  }
+
+  return `--- PEDIDO ACTIVO EN ESTA CONVERSACIÓN ---\n${sections.join('\n\n')}\nNO crees otro pedido con estos mismos productos. Si el cliente dice "gracias", "listo", "ok" o similar, confirma que su pedido ya está registrado.\n--- FIN ---`;
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate order guard (Protection 1)
+// ---------------------------------------------------------------------------
+
+async function executeCrearPedidoWithGuard(
+  args: Record<string, unknown>,
+  teamId: string,
+  customerId: string,
+  conversationId: string
+): Promise<string> {
+  const productos = args.productos as Array<{ nombre: string; sku?: string; cantidad: number }> | undefined;
+  if (!productos || productos.length === 0) {
+    return executeCrearPedido(args, teamId, customerId, conversationId);
+  }
+
+  // Look up the last non-cancelled order for this conversation
+  const { data: lastOrder } = await supabase
+    .from('orders')
+    .select('id, total, status, order_items(product_name, sku, quantity)')
+    .eq('conversation_id', conversationId)
+    .eq('team_id', teamId)
+    .neq('status', 'cancelado')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastOrder) {
+    const existingItems = (lastOrder.order_items as Array<{ product_name: string; sku: string | null; quantity: number }>) ?? [];
+
+    // Build normalised maps for the existing order
+    const existingBySku = new Map<string, number>();
+    const existingByName = new Map<string, number>();
+    for (const item of existingItems) {
+      if (item.sku) {
+        existingBySku.set(item.sku.trim().toUpperCase(), item.quantity);
+      }
+      existingByName.set(item.product_name.trim().toLowerCase(), item.quantity);
+    }
+
+    // Check if requested products are a subset (or exact match) of the existing order
+    const useSku = productos.some((p) => p.sku);
+    let isDuplicate = true;
+
+    if (useSku) {
+      for (const prod of productos) {
+        const key = (prod.sku ?? prod.nombre).trim().toUpperCase();
+        const existingQty = existingBySku.get(key);
+        if (existingQty === undefined || existingQty !== prod.cantidad) {
+          isDuplicate = false;
+          break;
+        }
+      }
+    } else {
+      for (const prod of productos) {
+        const key = prod.nombre.trim().toLowerCase();
+        const existingQty = existingByName.get(key);
+        if (existingQty === undefined || existingQty !== prod.cantidad) {
+          isDuplicate = false;
+          break;
+        }
+      }
+    }
+
+    if (isDuplicate) {
+      const shortId = (lastOrder.id as string).slice(0, 8);
+      const total = lastOrder.total as number;
+      console.log(`[Guard] Blocked duplicate order. Request matches existing order #${shortId}`);
+      return JSON.stringify({
+        success: false,
+        blocked_duplicate: true,
+        existing_order_id: lastOrder.id,
+        existing_order_short_id: shortId,
+        existing_total: total,
+        message: `Ya existe un pedido (#${shortId}) con exactamente estos productos. Total: $${total.toFixed(2)}. No se creó un pedido nuevo.`,
+      });
+    }
+  }
+
+  // Not a duplicate — proceed normally
+  return executeCrearPedido(args, teamId, customerId, conversationId);
+}
 
 async function executeCrearPedido(
   args: Record<string, unknown>,

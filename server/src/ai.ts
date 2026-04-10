@@ -169,7 +169,13 @@ Tienes la capacidad de crear pedidos para los clientes. Sigue estas reglas:
 4. Si el cliente dice que si, usa la herramienta crear_pedido con la lista de productos.
 5. Si el cliente quiere modificar algo, ajusta la lista y vuelve a pedir confirmacion.
 6. Puedes usar la herramienta consultar_disponibilidad para verificar stock de productos especificos.
-7. Nunca inventes precios. Siempre usa los precios de la base de conocimiento.`;
+7. Nunca inventes precios. Siempre usa los precios de la base de conocimiento.
+
+REGLA CRITICA ANTI-DUPLICADOS:
+- Una vez que crear_pedido devuelva un order_id exitoso, ese pedido QUEDA REGISTRADO. No lo crees de nuevo.
+- Si después el cliente dice "gracias", "listo", "ok", "perfecto", "todo bien" o cualquier expresión de cierre, NO ejecutes crear_pedido. Solo confirma que el pedido está registrado.
+- Solo ejecuta crear_pedido si el cliente pide productos NUEVOS y DIFERENTES a los del pedido existente.
+- Si el sistema devuelve blocked_duplicate=true, informa al cliente que su pedido ya está registrado y NO intentes crearlo de nuevo.`;
   }
 
   if (enabledTools?.includes('consultar_pedido')) {
