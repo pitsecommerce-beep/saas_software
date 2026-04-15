@@ -799,20 +799,60 @@ async function executeConsultarPedido(
   teamId: string
 ): Promise<string> {
   try {
-    const numeroPedido = args.numero_pedido as string;
+    const numeroPedido = (args.numero_pedido as string)?.trim();
     if (!numeroPedido) {
       return JSON.stringify({ success: false, error: 'No se proporcionó número de pedido' });
     }
 
-    const { data: order, error } = await supabase
-      .from('orders')
-      .select('*, order_items(*), customer:customers(name)')
-      .eq('team_id', teamId)
-      .or(`id.eq.${numeroPedido},id.ilike.${numeroPedido}%`)
-      .limit(1)
-      .maybeSingle();
+    const fullUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isFullUuid = fullUuidRegex.test(numeroPedido);
 
-    if (error || !order) {
+    let order: Record<string, unknown> | null = null;
+
+    if (isFullUuid) {
+      // Exact UUID match — use .eq() directly (avoids PostgREST .or() parsing issues with dashes)
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*, order_items(*), customer:customers(name)')
+        .eq('team_id', teamId)
+        .eq('id', numeroPedido)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error querying order by exact UUID:', error);
+        return JSON.stringify({ success: false, error: 'Error al consultar el pedido en la base de datos' });
+      }
+      order = data;
+    } else {
+      // Partial id (e.g. "b6e973a4") — UUID columns can't be ILIKE'd directly,
+      // so call an RPC that casts id::text and prefix-matches it.
+      const { data, error } = await supabase
+        .rpc('search_order_by_id', { p_query: numeroPedido, p_team_id: teamId });
+
+      if (error) {
+        console.error('Error calling search_order_by_id RPC:', error);
+        return JSON.stringify({ success: false, error: 'Error al buscar el pedido en la base de datos' });
+      }
+
+      const found = Array.isArray(data) ? data[0] : data;
+      if (found?.id) {
+        // Re-fetch with relations since the RPC only returns the orders row.
+        const { data: full, error: fullError } = await supabase
+          .from('orders')
+          .select('*, order_items(*), customer:customers(name)')
+          .eq('team_id', teamId)
+          .eq('id', found.id)
+          .maybeSingle();
+
+        if (fullError) {
+          console.error('Error fetching order details after RPC match:', fullError);
+          return JSON.stringify({ success: false, error: 'Error al obtener los detalles del pedido' });
+        }
+        order = full;
+      }
+    }
+
+    if (!order) {
       return JSON.stringify({ success: false, encontrado: false, mensaje: `No se encontró un pedido con el número "${numeroPedido}".` });
     }
 
