@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { Profile } from '@/types';
 import { cn } from '@/lib/utils';
+import { useBrandingStore } from '@/stores/brandingStore';
 
 interface SidebarProps {
   profile: Profile | null;
@@ -62,6 +63,8 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showProfilePanel, setShowProfilePanel] = useState(false);
+  const { appName, logoUrl } = useBrandingStore();
+  const brandInitial = appName.trim().charAt(0).toUpperCase() || 'O';
 
   return (
     <>
@@ -93,9 +96,17 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
         {/* Header / Brand */}
         <div className="flex h-16 items-center justify-between border-b border-surface-200 px-4">
           <div className="flex items-center gap-2 overflow-hidden">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">
-              O
-            </div>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={appName}
+                className="h-9 w-9 shrink-0 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">
+                {brandInitial}
+              </div>
+            )}
             <AnimatePresence>
               {!collapsed && (
                 <motion.span
@@ -105,7 +116,7 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden whitespace-nowrap text-lg font-bold text-surface-900"
                 >
-                  Orkesta
+                  {appName}
                 </motion.span>
               )}
             </AnimatePresence>
