@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
 import { useDemoStore } from '@/stores/demoStore';
+import { useBrandingStore, DEFAULT_APP_TAGLINE } from '@/stores/brandingStore';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
@@ -10,6 +11,8 @@ const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/conversations': 'Conversaciones',
   '/customers': 'Clientes',
+  '/knowledge-bases': 'Bases de Datos',
+  '/orders': 'Pedidos',
   '/team': 'Equipo',
   '/settings': 'Configuración',
 };
@@ -21,9 +24,28 @@ export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { profile, logout } = useAuthStore();
   const { isDemoMode } = useDemoStore();
+  const { appName, faviconUrl } = useBrandingStore();
   const location = useLocation();
 
   const title = pageTitles[location.pathname] ?? 'Dashboard';
+
+  // Apply custom branding to document (title + favicon)
+  useEffect(() => {
+    document.title = `${appName} - ${DEFAULT_APP_TAGLINE}`;
+  }, [appName]);
+
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (!link) return;
+    if (faviconUrl) {
+      link.href = faviconUrl;
+      // Let the browser infer type from the data URL / remote URL
+      link.removeAttribute('type');
+    } else {
+      link.href = '/favicon.svg';
+      link.type = 'image/svg+xml';
+    }
+  }, [faviconUrl]);
   const isFullHeight = useMemo(
     () => FULL_HEIGHT_PAGES.some((p) => location.pathname.startsWith(p)),
     [location.pathname]

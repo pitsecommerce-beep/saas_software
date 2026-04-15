@@ -16,6 +16,9 @@ import {
   Network,
   Trash2,
   CreditCard,
+  Palette,
+  Upload,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AIAgent, ChannelAssignment, ChannelType } from '@/types';
@@ -33,6 +36,7 @@ import { ChannelAgentConnector } from '@/components/settings/ChannelAgentConnect
 import { cn } from '@/lib/utils';
 import { useDemoStore } from '@/stores/demoStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useBrandingStore, DEFAULT_APP_NAME } from '@/stores/brandingStore';
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/config';
 
@@ -176,6 +180,14 @@ function SettingsPage() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [autoAssignEnabled, setAutoAssignEnabled] = useState(true);
 
+  // Branding settings — persisted locally via brandingStore and optionally
+  // synced to Supabase (branding_settings table) when connected.
+  const branding = useBrandingStore();
+  const [brandName, setBrandName] = useState(branding.appName);
+  const [brandLogo, setBrandLogo] = useState<string | null>(branding.logoUrl);
+  const [brandFavicon, setBrandFavicon] = useState<string | null>(branding.faviconUrl);
+  const [brandingSaved, setBrandingSaved] = useState(false);
+
   // yCloud settings
   const [yCloudApiKey, setYCloudApiKey] = useState('');
   const [yCloudPhoneNumberId, setYCloudPhoneNumberId] = useState('');
@@ -218,6 +230,75 @@ function SettingsPage() {
     }
   };
 
+  const readFileAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+  const handleBrandLogoUpload = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      alert('El logo debe pesar menos de 1 MB.');
+      return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    setBrandLogo(dataUrl);
+  };
+
+  const handleBrandFaviconUpload = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > 512 * 1024) {
+      alert('El favicon debe pesar menos de 512 KB.');
+      return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    setBrandFavicon(dataUrl);
+  };
+
+  const handleSaveBranding = async () => {
+    const appName = brandName.trim() || DEFAULT_APP_NAME;
+    // Apply immediately to the UI + localStorage
+    branding.setBranding({
+      appName,
+      logoUrl: brandLogo,
+      faviconUrl: brandFavicon,
+    });
+
+    // Best-effort sync to Supabase (table may not exist yet if migration
+    // hasn't been applied — silently ignore so branding still persists locally)
+    if (isSupabaseConfigured && teamId) {
+      try {
+        await supabase
+          .from('branding_settings')
+          .upsert(
+            {
+              team_id: teamId,
+              app_name: appName,
+              logo_url: brandLogo,
+              favicon_url: brandFavicon,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'team_id' }
+          );
+      } catch (err) {
+        console.warn('Branding: Supabase sync skipped', err);
+      }
+    }
+
+    setBrandingSaved(true);
+    setTimeout(() => setBrandingSaved(false), 2500);
+  };
+
+  const handleResetBranding = () => {
+    setBrandName(DEFAULT_APP_NAME);
+    setBrandLogo(null);
+    setBrandFavicon(null);
+    branding.reset();
+  };
+
   const handleSavePayment = async () => {
     if (!isSupabaseConfigured || !teamId) return;
     try {
@@ -251,11 +332,12 @@ function SettingsPage() {
       return;
     }
     try {
-      const [agentsRes, assignRes, yCloudRes, paymentRes] = await Promise.all([
+      const [agentsRes, assignRes, yCloudRes, paymentRes, brandingRes] = await Promise.all([
         supabase.from('ai_agents').select('*').eq('team_id', teamId).order('created_at', { ascending: false }),
         supabase.from('channel_assignments').select('*, agent:ai_agents(*)').eq('team_id', teamId).order('created_at', { ascending: false }),
         supabase.from('ycloud_settings').select('*').eq('team_id', teamId).maybeSingle(),
         supabase.from('payment_settings').select('*').eq('team_id', teamId).maybeSingle(),
+        supabase.from('branding_settings').select('*').eq('team_id', teamId).maybeSingle(),
       ]);
       if (agentsRes.data) setAgents(agentsRes.data as AIAgent[]);
       if (assignRes.data) setAssignments(assignRes.data as ChannelAssignment[]);
@@ -270,11 +352,27 @@ function SettingsPage() {
         setPaymentApiKey(paymentRes.data.api_key_encrypted ?? '');
         setPaymentActive(paymentRes.data.is_active ?? true);
       }
+      // Branding table is optional — it may not exist yet if the migration
+      // hasn't been applied. Swallow errors silently in that case.
+      if (!brandingRes.error && brandingRes.data) {
+        const remoteName = brandingRes.data.app_name ?? DEFAULT_APP_NAME;
+        const remoteLogo = brandingRes.data.logo_url ?? null;
+        const remoteFavicon = brandingRes.data.favicon_url ?? null;
+        setBrandName(remoteName);
+        setBrandLogo(remoteLogo);
+        setBrandFavicon(remoteFavicon);
+        branding.setBranding({
+          appName: remoteName,
+          logoUrl: remoteLogo,
+          faviconUrl: remoteFavicon,
+        });
+      }
     } catch (err) {
       console.error('Failed to load settings data:', err);
     } finally {
       setDataLoaded(true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   useEffect(() => {
@@ -914,6 +1012,159 @@ function SettingsPage() {
                         <p className="text-xs text-surface-400">
                           Comparte este código con tu equipo para que se unan.
                         </p>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Branding card — lets the manager customize app name, logo and favicon */}
+                <Card>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary-50">
+                      <Palette className="h-5 w-5 text-primary-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-surface-900">Branding</h3>
+                      <p className="text-sm text-surface-500">
+                        Personaliza el nombre y el logo que verá tu equipo.
+                      </p>
+                    </div>
+                  </div>
+
+                  {!isManager && (
+                    <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <p className="text-sm text-amber-700">
+                        Solo el gerente puede cambiar el branding.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-5">
+                    <Input
+                      label="Nombre del software"
+                      placeholder="Ej: Mi Empresa CRM"
+                      value={brandName}
+                      onChange={(e) => setBrandName(e.target.value)}
+                      icon={Building2}
+                      disabled={!isManager}
+                    />
+                    <p className="-mt-3 text-xs text-surface-400">
+                      Reemplaza &ldquo;{DEFAULT_APP_NAME}&rdquo; en la barra lateral y en el título de la pestaña.
+                    </p>
+
+                    {/* Logo uploader */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-surface-700">
+                        Logo (barra lateral)
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-surface-200 bg-surface-50 overflow-hidden">
+                          {brandLogo ? (
+                            <img src={brandLogo} alt="Logo" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="text-xl font-bold text-surface-400">
+                              {(brandName.trim().charAt(0) || 'O').toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label
+                            className={cn(
+                              'inline-flex items-center gap-2 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm font-medium text-surface-700 cursor-pointer hover:bg-surface-50 transition-colors',
+                              !isManager && 'opacity-50 cursor-not-allowed'
+                            )}
+                          >
+                            <Upload className="h-4 w-4" />
+                            Subir logo
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                              className="hidden"
+                              disabled={!isManager}
+                              onChange={(e) => handleBrandLogoUpload(e.target.files?.[0] ?? null)}
+                            />
+                          </label>
+                          {brandLogo && isManager && (
+                            <button
+                              type="button"
+                              onClick={() => setBrandLogo(null)}
+                              className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                            >
+                              <X className="h-3 w-3" />
+                              Quitar logo
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-surface-400">PNG, JPG, SVG o WEBP. Máx. 1 MB.</p>
+                    </div>
+
+                    {/* Favicon uploader */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-surface-700">
+                        Ícono de la pestaña (favicon)
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-surface-200 bg-surface-50 overflow-hidden">
+                          {brandFavicon ? (
+                            <img src={brandFavicon} alt="Favicon" className="h-full w-full object-contain" />
+                          ) : (
+                            <Globe className="h-5 w-5 text-surface-400" />
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <label
+                            className={cn(
+                              'inline-flex items-center gap-2 rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm font-medium text-surface-700 cursor-pointer hover:bg-surface-50 transition-colors',
+                              !isManager && 'opacity-50 cursor-not-allowed'
+                            )}
+                          >
+                            <Upload className="h-4 w-4" />
+                            Subir favicon
+                            <input
+                              type="file"
+                              accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon,image/webp"
+                              className="hidden"
+                              disabled={!isManager}
+                              onChange={(e) => handleBrandFaviconUpload(e.target.files?.[0] ?? null)}
+                            />
+                          </label>
+                          {brandFavicon && isManager && (
+                            <button
+                              type="button"
+                              onClick={() => setBrandFavicon(null)}
+                              className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                            >
+                              <X className="h-3 w-3" />
+                              Quitar favicon
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-surface-400">
+                        Se recomienda PNG o SVG cuadrado. Máx. 512 KB.
+                      </p>
+                    </div>
+
+                    {isManager && (
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-surface-100">
+                        <Button variant="ghost" size="sm" onClick={handleResetBranding}>
+                          Restablecer
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveBranding}
+                          icon={
+                            brandingSaved ? (
+                              <CheckCircle2 className="h-4 w-4" />
+                            ) : (
+                              <Palette className="h-4 w-4" />
+                            )
+                          }
+                        >
+                          {brandingSaved ? '¡Guardado!' : 'Guardar branding'}
+                        </Button>
                       </div>
                     )}
                   </div>
