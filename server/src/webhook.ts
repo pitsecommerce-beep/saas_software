@@ -513,13 +513,12 @@ async function getActiveOrderContext(conversationId: string, teamId: string): Pr
 
   const sections: string[] = [];
   for (const order of activeOrders) {
-    const shortId = (order.id as string).slice(0, 8);
     const items = (order.order_items as Array<{ product_name: string; sku: string | null; quantity: number; unit_price: number; subtotal: number }>) ?? [];
     const itemLines = items.map(
       (it) => `  - ${it.product_name}${it.sku ? ` (${it.sku})` : ''} x${it.quantity} — $${it.subtotal.toFixed(2)}`
     ).join('\n');
     sections.push(
-      `Ya existe el pedido #${shortId} con estos productos:\n${itemLines}\n  Total: $${(order.total as number).toFixed(2)} | Estado: ${order.status}`
+      `Ya existe el pedido #${order.id} con estos productos:\n${itemLines}\n  Total: $${(order.total as number).toFixed(2)} | Estado: ${order.status}`
     );
   }
 
@@ -590,16 +589,14 @@ async function executeCrearPedidoWithGuard(
     }
 
     if (isDuplicate) {
-      const shortId = (lastOrder.id as string).slice(0, 8);
       const total = lastOrder.total as number;
-      console.log(`[Guard] Blocked duplicate order. Request matches existing order #${shortId}`);
+      console.log(`[Guard] Blocked duplicate order. Request matches existing order #${lastOrder.id}`);
       return JSON.stringify({
         success: false,
         blocked_duplicate: true,
         existing_order_id: lastOrder.id,
-        existing_order_short_id: shortId,
         existing_total: total,
-        message: `Ya existe un pedido (#${shortId}) con exactamente estos productos. Total: $${total.toFixed(2)}. No se creó un pedido nuevo.`,
+        message: `Ya existe un pedido (#${lastOrder.id}) con exactamente estos productos. Total: $${total.toFixed(2)}. No se creó un pedido nuevo. Comparte este número de pedido completo con el cliente para que pueda darle seguimiento.`,
       });
     }
   }
@@ -720,7 +717,7 @@ async function executeCrearPedido(
       order_id: order.id,
       total: total.toFixed(2),
       items_count: orderItems.length,
-      summary: `Pedido creado exitosamente.\n\nProductos:\n${itemsSummary}\n\nTotal: $${total.toFixed(2)} MXN\nEstado: Pendiente de pago`,
+      summary: `Pedido creado exitosamente.\n\nNúmero de pedido: ${order.id}\n\nProductos:\n${itemsSummary}\n\nTotal: $${total.toFixed(2)} MXN\nEstado: Pendiente de pago`,
     });
   } catch (err) {
     console.error('Error in executeCrearPedido:', err);
@@ -881,7 +878,6 @@ async function executeConsultarPedido(
       encontrado: true,
       pedido: {
         id: order.id,
-        id_corto: (order.id as string).slice(0, 8),
         estado: statusLabels[order.status as string] ?? order.status,
         total: order.total,
         notas: order.notes,

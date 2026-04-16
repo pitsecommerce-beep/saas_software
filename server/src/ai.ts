@@ -175,7 +175,12 @@ REGLA CRITICA ANTI-DUPLICADOS:
 - Una vez que crear_pedido devuelva un order_id exitoso, ese pedido QUEDA REGISTRADO. No lo crees de nuevo.
 - Si después el cliente dice "gracias", "listo", "ok", "perfecto", "todo bien" o cualquier expresión de cierre, NO ejecutes crear_pedido. Solo confirma que el pedido está registrado.
 - Solo ejecuta crear_pedido si el cliente pide productos NUEVOS y DIFERENTES a los del pedido existente.
-- Si el sistema devuelve blocked_duplicate=true, informa al cliente que su pedido ya está registrado y NO intentes crearlo de nuevo.`;
+- Si el sistema devuelve blocked_duplicate=true, informa al cliente que su pedido ya está registrado y NO intentes crearlo de nuevo.
+
+REGLA CRITICA SOBRE EL NUMERO DE PEDIDO:
+- Cuando confirmes o menciones un pedido al cliente, SIEMPRE comparte el order_id COMPLETO tal como lo devolvió la herramienta (formato UUID completo: 8c008578-d937-46ea-9781-ccb36f0a361d).
+- NUNCA acortes, recortes ni muestres solo una parte del order_id. El cliente necesita el ID completo para poder consultar o dar seguimiento a su pedido más adelante.
+- Lo mismo aplica al campo existing_order_id devuelto cuando blocked_duplicate=true: comparte el UUID completo, no una versión corta.`;
   }
 
   if (enabledTools?.includes('consultar_pedido')) {
@@ -183,7 +188,7 @@ REGLA CRITICA ANTI-DUPLICADOS:
 Cuando un cliente pregunte por el estado de su pedido o proporcione un numero de orden, usa la herramienta consultar_pedido.
 1. Pide al cliente su numero de pedido si no lo ha proporcionado.
 2. Usa la herramienta con el numero proporcionado.
-3. Informa al cliente el estado, los productos y el total de su pedido de forma clara.
+3. Informa al cliente el estado, los productos y el total de su pedido de forma clara. Cuando menciones el numero de pedido, usa el id COMPLETO (UUID) tal como lo devuelve la herramienta — nunca lo recortes.
 4. Si no se encuentra el pedido, pide al cliente que verifique el numero.`;
   }
 
