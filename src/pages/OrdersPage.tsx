@@ -88,14 +88,47 @@ function OrdersPage() {
       return;
     }
     try {
+      // Query orders *without* joining to profiles via the seller foreign key.
+      // That join only works after the `add_order_seller_and_payment_fields`
+      // migration has been applied; keeping it inline made the whole query
+      // fail — and hid every existing order — on databases that haven't run
+      // the migration yet. The seller name is hydrated in a follow-up query
+      // below so it degrades gracefully if `seller_id` isn't present.
       const { data, error } = await supabase
         .from('orders')
-        .select('*, customer:customers(name), conversation:conversations(channel), seller:profiles!orders_seller_id_fkey(full_name), order_items(*)')
+        .select('*, customer:customers(name), conversation:conversations(channel), order_items(*)')
         .eq('team_id', teamId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setOrders((data as OrderRow[]) ?? []);
+      const loaded = (data as OrderRow[]) ?? [];
+
+      // Enrich with seller full_name if any rows have a seller_id.
+      const sellerIds = Array.from(
+        new Set(
+          loaded
+            .map((o) => o.seller_id)
+            .filter((v): v is string => typeof v === 'string' && v.length > 0)
+        )
+      );
+      if (sellerIds.length > 0) {
+        const { data: sellersData } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', sellerIds);
+        if (sellersData) {
+          const sellerById = new Map(
+            (sellersData as Array<{ id: string; full_name: string }>).map((p) => [p.id, p])
+          );
+          for (const order of loaded) {
+            if (order.seller_id && sellerById.has(order.seller_id)) {
+              order.seller = { full_name: sellerById.get(order.seller_id)!.full_name };
+            }
+          }
+        }
+      }
+
+      setOrders(loaded);
     } catch (err) {
       console.error('Error loading orders:', err);
     } finally {
