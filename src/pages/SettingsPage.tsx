@@ -200,7 +200,14 @@ function SettingsPage() {
   // Payment settings
   const [paymentProvider, setPaymentProvider] = useState<'mercadopago' | 'stripe'>('mercadopago');
   const [paymentApiKey, setPaymentApiKey] = useState('');
+  const [paymentPublicKey, setPaymentPublicKey] = useState('');
+  const [paymentSuccessUrl, setPaymentSuccessUrl] = useState('');
+  const [paymentCancelUrl, setPaymentCancelUrl] = useState('');
+  const [paymentWebhookSecret, setPaymentWebhookSecret] = useState('');
+  const [paymentStatementDescriptor, setPaymentStatementDescriptor] = useState('');
+  const [paymentCurrency, setPaymentCurrency] = useState('MXN');
   const [showPaymentKey, setShowPaymentKey] = useState(false);
+  const [showPaymentSecret, setShowPaymentSecret] = useState(false);
   const [paymentSaved, setPaymentSaved] = useState(false);
   const [paymentActive, setPaymentActive] = useState(true);
   const isPaymentConnected = paymentApiKey.length > 0;
@@ -306,6 +313,12 @@ function SettingsPage() {
         team_id: teamId,
         provider: paymentProvider,
         api_key_encrypted: paymentApiKey,
+        public_key: paymentPublicKey || null,
+        success_url: paymentSuccessUrl || null,
+        cancel_url: paymentCancelUrl || null,
+        webhook_secret: paymentWebhookSecret || null,
+        statement_descriptor: paymentStatementDescriptor || null,
+        currency: paymentCurrency || 'MXN',
         is_active: paymentActive,
         updated_at: new Date().toISOString(),
       };
@@ -350,6 +363,12 @@ function SettingsPage() {
       if (paymentRes.data) {
         setPaymentProvider(paymentRes.data.provider ?? 'mercadopago');
         setPaymentApiKey(paymentRes.data.api_key_encrypted ?? '');
+        setPaymentPublicKey(paymentRes.data.public_key ?? '');
+        setPaymentSuccessUrl(paymentRes.data.success_url ?? '');
+        setPaymentCancelUrl(paymentRes.data.cancel_url ?? '');
+        setPaymentWebhookSecret(paymentRes.data.webhook_secret ?? '');
+        setPaymentStatementDescriptor(paymentRes.data.statement_descriptor ?? '');
+        setPaymentCurrency(paymentRes.data.currency ?? 'MXN');
         setPaymentActive(paymentRes.data.is_active ?? true);
       }
       // Branding table is optional — it may not exist yet if the migration
@@ -928,8 +947,94 @@ function SettingsPage() {
                       </div>
                       <p className="text-xs text-surface-400">
                         {paymentProvider === 'mercadopago'
-                          ? 'Encuéntralo en Mercado Pago → Tus integraciones → Credenciales de producción → Access Token.'
-                          : 'Encuéntralo en Stripe Dashboard → Developers → API keys → Secret key.'}
+                          ? 'Mercado Pago → Tus integraciones → Credenciales de producción → Access Token. Formato: APP_USR-... Mantén este valor en secreto, solo va al servidor.'
+                          : 'Stripe Dashboard → Developers → API keys → Secret key (sk_live_... o sk_test_...). Nunca debe exponerse al navegador.'}
+                      </p>
+                    </div>
+
+                    <Input
+                      label={paymentProvider === 'mercadopago' ? 'Public Key (opcional, para Checkout Bricks)' : 'Publishable Key (opcional, para Stripe Elements)'}
+                      placeholder={paymentProvider === 'mercadopago' ? 'APP_USR-pub-...' : 'pk_live_...'}
+                      value={paymentPublicKey}
+                      onChange={(e) => setPaymentPublicKey(e.target.value)}
+                      disabled={!isManager}
+                    />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input
+                        label="URL de éxito"
+                        placeholder="https://tu-sitio.com/pago/exito"
+                        value={paymentSuccessUrl}
+                        onChange={(e) => setPaymentSuccessUrl(e.target.value)}
+                        disabled={!isManager}
+                      />
+                      <Input
+                        label="URL de cancelación"
+                        placeholder="https://tu-sitio.com/pago/cancelado"
+                        value={paymentCancelUrl}
+                        onChange={(e) => setPaymentCancelUrl(e.target.value)}
+                        disabled={!isManager}
+                      />
+                    </div>
+                    <p className="-mt-2 text-xs text-surface-400">
+                      {paymentProvider === 'mercadopago'
+                        ? 'Mercado Pago exige back_urls.success cuando auto_return="approved". Configura ambas URLs públicas HTTPS para redirigir al cliente después del pago.'
+                        : 'Stripe requiere success_url y cancel_url HTTPS para Checkout Sessions en modo hosted.'}
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input
+                        label="Statement descriptor (máx. 22 car.)"
+                        placeholder="MI NEGOCIO"
+                        value={paymentStatementDescriptor}
+                        onChange={(e) => setPaymentStatementDescriptor(e.target.value.slice(0, 22))}
+                        disabled={!isManager}
+                      />
+                      <div>
+                        <Select
+                          label="Moneda"
+                          value={paymentCurrency}
+                          onChange={(e) => setPaymentCurrency(e.target.value)}
+                          disabled={!isManager}
+                          options={[
+                            { value: 'MXN', label: 'MXN — Peso mexicano' },
+                            { value: 'USD', label: 'USD — Dólar estadounidense' },
+                            { value: 'ARS', label: 'ARS — Peso argentino' },
+                            { value: 'BRL', label: 'BRL — Real brasileño' },
+                            { value: 'CLP', label: 'CLP — Peso chileno' },
+                            { value: 'COP', label: 'COP — Peso colombiano' },
+                            { value: 'PEN', label: 'PEN — Sol peruano' },
+                            { value: 'EUR', label: 'EUR — Euro' },
+                          ]}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-medium text-surface-700">
+                        {paymentProvider === 'mercadopago' ? 'Secreto de notificaciones (webhook)' : 'Webhook signing secret'}
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showPaymentSecret ? 'text' : 'password'}
+                          disabled={!isManager}
+                          placeholder={paymentProvider === 'mercadopago' ? 'Integraciones → Notificaciones → Secreto' : 'whsec_...'}
+                          value={paymentWebhookSecret}
+                          onChange={(e) => setPaymentWebhookSecret(e.target.value)}
+                          className="block w-full rounded-lg border border-surface-200 bg-white px-3.5 py-2.5 pr-12 text-sm text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 disabled:bg-surface-50 disabled:cursor-not-allowed"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPaymentSecret((v) => !v)}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-surface-400 hover:text-surface-600 transition-colors"
+                        >
+                          {showPaymentSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="text-xs text-surface-400">
+                        {paymentProvider === 'mercadopago'
+                          ? 'Usado para validar las notificaciones IPN/Webhook (x-signature).'
+                          : 'Usado para validar firmas Stripe-Signature en los eventos de webhook.'}
                       </p>
                     </div>
 
@@ -939,6 +1044,37 @@ function SettingsPage() {
                       label="Activo"
                       description="Cuando está activo, el agente de IA puede generar links de pago"
                     />
+                  </div>
+                </Card>
+
+                {/* Webhook URL card — shows the endpoint clients need to register */}
+                <Card>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-green-50">
+                      <Globe className="h-4 w-4 text-green-600" />
+                    </div>
+                    <h4 className="text-base font-semibold text-surface-900">URL del Webhook</h4>
+                  </div>
+                  <p className="text-sm text-surface-500 mb-3">
+                    {paymentProvider === 'mercadopago'
+                      ? 'Registra esta URL en Mercado Pago → Tus integraciones → Notificaciones → IPN/Webhooks. El campo Tópico debe incluir "payment".'
+                      : 'Registra esta URL en Stripe Dashboard → Developers → Webhooks con los eventos checkout.session.completed y payment_intent.succeeded.'}
+                  </p>
+                  <div className="flex items-center gap-2 rounded-lg bg-surface-50 border border-surface-200 px-4 py-3">
+                    <code className="text-xs font-mono text-surface-700 break-all flex-1">
+                      {`${(yCloudWebhookUrl || 'https://tu-servicio.up.railway.app').replace(/\/$/, '')}/api/webhooks/${paymentProvider}`}
+                    </code>
+                    <button
+                      onClick={() =>
+                        navigator.clipboard.writeText(
+                          `${(yCloudWebhookUrl || '').replace(/\/$/, '')}/api/webhooks/${paymentProvider}`
+                        )
+                      }
+                      disabled={!yCloudWebhookUrl}
+                      className="shrink-0 text-xs text-primary-500 hover:text-primary-600 font-medium disabled:text-surface-300"
+                    >
+                      Copiar
+                    </button>
                   </div>
                 </Card>
 

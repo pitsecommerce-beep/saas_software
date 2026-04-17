@@ -165,6 +165,7 @@ CREATE TABLE orders (
   team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  seller_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'curioso' CHECK (status IN (
     'curioso', 'cotizando', 'pendiente_pago', 'pendiente_surtir',
     'pendiente_enviar', 'enviado', 'entregado', 'cancelado', 'requiere_atencion'
@@ -652,6 +653,7 @@ CREATE INDEX idx_knowledge_bases_team_id ON knowledge_bases(team_id);
 CREATE INDEX idx_knowledge_rows_kb_id ON knowledge_rows(knowledge_base_id);
 CREATE INDEX idx_orders_team_id ON orders(team_id);
 CREATE INDEX idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX idx_orders_seller_id ON orders(seller_id);
 CREATE INDEX idx_inventory_product_id ON inventory(product_id);
 CREATE INDEX idx_inventory_warehouse_id ON inventory(warehouse_id);
 CREATE INDEX idx_teams_invite_code ON teams(invite_code);

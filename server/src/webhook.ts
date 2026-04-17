@@ -925,47 +925,71 @@ async function executeGenerarLinkPago(
     }
 
     let paymentUrl = '';
+    const currency = (settings.currency ?? 'MXN').toUpperCase();
+    const externalReference = orderId ?? conversationId;
+    const successUrl = (settings.success_url && String(settings.success_url).trim()) || 'https://orkesta.app/payment/success';
+    const cancelUrl = (settings.cancel_url && String(settings.cancel_url).trim()) || 'https://orkesta.app/payment/cancel';
+    const idempotencyKey = `${externalReference}-${Date.now()}`;
+    const metadata: Record<string, string> = {
+      team_id: teamId,
+      conversation_id: conversationId,
+    };
+    if (orderId) metadata.order_id = orderId;
 
     if (settings.provider === 'mercadopago') {
+      const body: Record<string, unknown> = {
+        items: [
+          {
+            title: String(descripcion).slice(0, 256),
+            quantity: 1,
+            unit_price: Number(Number(monto).toFixed(2)),
+            currency_id: currency,
+          },
+        ],
+        external_reference: externalReference,
+        back_urls: { success: successUrl, failure: cancelUrl, pending: successUrl },
+        auto_return: 'approved',
+        metadata,
+      };
+      if (settings.webhook_url) body.notification_url = settings.webhook_url;
+
       const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${settings.api_key_encrypted}`,
+          Authorization: `Bearer ${settings.api_key_encrypted}`,
+          'X-Idempotency-Key': idempotencyKey,
         },
-        body: JSON.stringify({
-          items: [{
-            title: descripcion,
-            quantity: 1,
-            unit_price: monto,
-            currency_id: 'MXN',
-          }],
-          external_reference: orderId ?? conversationId,
-          auto_return: 'approved',
-        }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) {
         const errBody = await response.text();
         throw new Error(`Mercado Pago API error: ${errBody}`);
       }
-      const mpData = await response.json() as { init_point: string };
-      paymentUrl = mpData.init_point;
+      const mpData = (await response.json()) as { init_point?: string; sandbox_init_point?: string };
+      paymentUrl = mpData.init_point || mpData.sandbox_init_point || '';
     } else if (settings.provider === 'stripe') {
       const params = new URLSearchParams();
-      params.append('line_items[0][price_data][currency]', 'mxn');
-      params.append('line_items[0][price_data][product_data][name]', descripcion);
-      params.append('line_items[0][price_data][unit_amount]', String(Math.round(monto * 100)));
-      params.append('line_items[0][quantity]', '1');
       params.append('mode', 'payment');
-      params.append('success_url', 'https://orkesta.app/payment/success');
-      params.append('cancel_url', 'https://orkesta.app/payment/cancel');
-      if (orderId) params.append('metadata[order_id]', orderId);
+      params.append('line_items[0][quantity]', '1');
+      params.append('line_items[0][price_data][currency]', currency.toLowerCase());
+      params.append('line_items[0][price_data][unit_amount]', String(Math.round(monto * 100)));
+      params.append('line_items[0][price_data][product_data][name]', String(descripcion).slice(0, 250));
+      params.append('success_url', successUrl);
+      params.append('cancel_url', cancelUrl);
+      params.append('client_reference_id', externalReference);
+      params.append('locale', 'es');
+      for (const [key, value] of Object.entries(metadata)) {
+        params.append(`metadata[${key}]`, value);
+        params.append(`payment_intent_data[metadata][${key}]`, value);
+      }
 
       const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${Buffer.from(settings.api_key_encrypted + ':').toString('base64')}`,
+          Authorization: `Bearer ${settings.api_key_encrypted}`,
           'Content-Type': 'application/x-www-form-urlencoded',
+          'Idempotency-Key': idempotencyKey,
         },
         body: params.toString(),
       });
@@ -973,7 +997,7 @@ async function executeGenerarLinkPago(
         const errBody = await response.text();
         throw new Error(`Stripe API error: ${errBody}`);
       }
-      const stripeData = await response.json() as { url: string };
+      const stripeData = (await response.json()) as { url: string };
       paymentUrl = stripeData.url;
     }
 

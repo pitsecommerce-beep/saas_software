@@ -22,6 +22,8 @@ import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/config';
 import { ORDER_STATUSES } from '@/config/modules';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { CreateOrderModal } from '@/components/orders/CreateOrderModal';
 import type { OrderStatus } from '@/types';
 
 interface OrderItemRow {
@@ -37,6 +39,7 @@ interface OrderRow {
   id: string;
   customer_id: string | null;
   conversation_id: string | null;
+  seller_id: string | null;
   status: OrderStatus;
   total: number | null;
   notes: string | null;
@@ -44,6 +47,7 @@ interface OrderRow {
   updated_at: string;
   customer?: { name: string } | null;
   conversation?: { channel: string } | null;
+  seller?: { full_name: string } | null;
   order_items?: OrderItemRow[];
 }
 
@@ -76,6 +80,7 @@ function OrdersPage() {
   const [dateTo, setDateTo] = useState('');
   const [editingOrder, setEditingOrder] = useState<EditingOrder | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const loadOrders = useCallback(async () => {
     if (!isSupabaseConfigured || !teamId) {
@@ -85,7 +90,7 @@ function OrdersPage() {
     try {
       const { data, error } = await supabase
         .from('orders')
-        .select('*, customer:customers(name), conversation:conversations(channel), order_items(*)')
+        .select('*, customer:customers(name), conversation:conversations(channel), seller:profiles!orders_seller_id_fkey(full_name), order_items(*)')
         .eq('team_id', teamId)
         .order('created_at', { ascending: false });
 
@@ -304,16 +309,48 @@ function OrdersPage() {
   if (!loading && orders.length === 0) {
     return (
       <div className="mx-auto max-w-7xl space-y-6 p-6">
-        <h1 className="text-2xl font-bold text-surface-900">Pedidos</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-surface-900">Pedidos</h1>
+          {profile && teamId && (
+            <Button
+              size="sm"
+              onClick={() => setShowCreateModal(true)}
+              icon={<Plus className="h-4 w-4" />}
+            >
+              Nuevo pedido
+            </Button>
+          )}
+        </div>
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-surface-200 bg-white py-20 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-100 mb-4">
             <ShoppingCart className="h-8 w-8 text-surface-400" />
           </div>
           <h3 className="text-base font-semibold text-surface-700 mb-1">Sin pedidos aun</h3>
           <p className="text-sm text-surface-500 max-w-sm">
-            Los pedidos apareceran aqui cuando el agente de IA los cree durante las conversaciones con clientes. Asegurate de habilitar la herramienta "Crear pedido" en la configuracion del agente.
+            Los pedidos aparecerán aquí cuando el agente de IA los cree durante las conversaciones con clientes, o cuando los crees manualmente desde este panel.
           </p>
+          {profile && teamId && (
+            <Button
+              className="mt-6"
+              size="md"
+              onClick={() => setShowCreateModal(true)}
+              icon={<Plus className="h-4 w-4" />}
+            >
+              Crear primer pedido
+            </Button>
+          )}
         </div>
+
+        {profile && teamId && (
+          <CreateOrderModal
+            isOpen={showCreateModal}
+            teamId={teamId}
+            sellerId={profile.id}
+            sellerName={profile.full_name}
+            onClose={() => setShowCreateModal(false)}
+            onCreated={loadOrders}
+          />
+        )}
       </div>
     );
   }
@@ -324,11 +361,22 @@ function OrdersPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-surface-900">Pedidos</h1>
-        <span className="text-sm text-surface-500">
-          {filteredOrders.length} pedido{filteredOrders.length !== 1 ? 's' : ''}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-surface-500 hidden sm:inline">
+            {filteredOrders.length} pedido{filteredOrders.length !== 1 ? 's' : ''}
+          </span>
+          {profile && teamId && (
+            <Button
+              size="sm"
+              onClick={() => setShowCreateModal(true)}
+              icon={<Plus className="h-4 w-4" />}
+            >
+              Nuevo pedido
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -679,6 +727,16 @@ function OrdersPage() {
 
                             {/* Notes & actions row */}
                             <div className="flex flex-col sm:flex-row gap-4">
+                              {/* Seller */}
+                              {order.seller?.full_name && (
+                                <div>
+                                  <h4 className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-1">
+                                    Vendedor
+                                  </h4>
+                                  <p className="text-sm text-surface-700">{order.seller.full_name}</p>
+                                </div>
+                              )}
+
                               {/* Notes */}
                               {order.notes && (
                                 <div className="flex-1">
@@ -739,6 +797,17 @@ function OrdersPage() {
             </div>
           )}
         </div>
+      )}
+
+      {profile && teamId && (
+        <CreateOrderModal
+          isOpen={showCreateModal}
+          teamId={teamId}
+          sellerId={profile.id}
+          sellerName={profile.full_name}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={loadOrders}
+        />
       )}
     </div>
   );

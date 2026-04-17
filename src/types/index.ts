@@ -100,6 +100,8 @@ export interface Order {
   customer?: Customer;
   conversation_id?: string;
   conversation?: Conversation;
+  seller_id?: string;
+  seller?: Profile;
   status: OrderStatus;
   total?: number;
   notes?: string;
