@@ -3,6 +3,7 @@ import cors from 'cors';
 import { handleYCloudWebhook } from './webhook';
 import { handleSendMessage } from './outbound';
 import { handleCreatePaymentLink } from './payments';
+import { handleCleanupPendingUser } from './auth';
 import { isConfigured } from './supabase';
 
 const app = express();
@@ -37,6 +38,11 @@ app.post('/api/messages/send', handleSendMessage);
 
 // Payment link endpoint — generate and send payment links
 app.post('/api/payments/create-link', handleCreatePaymentLink);
+
+// Cleanup endpoint — deletes an abandoned auth user (only if no team_id).
+// Called when a user bails out of onboarding so the email address is freed
+// and the email isn't permanently locked to an incomplete registration.
+app.post('/api/auth/cleanup-pending-user', handleCleanupPendingUser);
 
 app.listen(PORT, () => {
   console.log(`Orkesta webhook server running on port ${PORT}`);

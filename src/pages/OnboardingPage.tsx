@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { FormEvent, DragEvent, ChangeEvent } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,13 +16,62 @@ import {
   X,
   Hash,
   Users,
+  UserPlus,
 } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
 import { generateInviteCode } from '@/lib/utils';
+import { cleanupPendingAuthUser, discardPendingGoogleUser } from '@/lib/authCleanup';
 import type { BusinessType } from '@/types';
+
+type OAuthIntent = 'create-company' | 'join-team';
+
+function readOAuthIntent(): OAuthIntent | null {
+  if (typeof window === 'undefined') return null;
+  const v = window.sessionStorage.getItem('oauth_onboarding_intent');
+  return v === 'create-company' || v === 'join-team' ? v : null;
+}
+
+function writeOAuthIntent(v: OAuthIntent | null) {
+  if (typeof window === 'undefined') return;
+  if (v === null) window.sessionStorage.removeItem('oauth_onboarding_intent');
+  else window.sessionStorage.setItem('oauth_onboarding_intent', v);
+}
+
+function clearOAuthPending() {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.removeItem('oauth_onboarding_pending');
+  window.sessionStorage.removeItem('oauth_onboarding_intent');
+}
+
+function isOAuthOnboardingPending(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.sessionStorage.getItem('oauth_onboarding_pending') === '1';
+}
+
+/**
+ * Installs a `beforeunload` listener that tries to delete the current auth
+ * user if they close the tab before finishing onboarding. Uses sendBeacon so
+ * the request survives the page tear-down.
+ */
+function useAbandonmentCleanup(active: boolean, userId?: string) {
+  useEffect(() => {
+    if (!active || !userId) return;
+    const handler = () => {
+      void (async () => {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (token) {
+          cleanupPendingAuthUser(userId, token, { beacon: true });
+        }
+      })();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [active, userId]);
+}
 
 const TOTAL_STEPS = 3;
 
@@ -43,6 +92,7 @@ const slideVariants = {
 
 export default function OnboardingPage() {
   const { user, profile, pendingRegistration } = useAuthStore();
+  const [intent, setIntent] = useState<OAuthIntent | null>(() => readOAuthIntent());
 
   // If user already has a profile with a team, redirect to dashboard.
   if (profile?.team_id) {
@@ -55,24 +105,158 @@ export default function OnboardingPage() {
     return <Navigate to="/register" replace />;
   }
 
-  // Vendedores should NOT create teams — show a join-team form instead.
-  // However, Google OAuth users arriving without a team should always see the
-  // manager wizard (AuthCallbackPage already sets their role to 'gerente',
-  // but guard against race conditions where the profile hasn't been updated yet).
-  const isGoogleOAuthUser = !pendingRegistration && user;
+  const isGoogleOAuthUser = !pendingRegistration && !!user && isOAuthOnboardingPending();
+
+  // Email/password vendedor flow: profile.role is already 'vendedor' and the
+  // user needs to supply the team code. (Set by RegisterPage.)
   if (profile?.role === 'vendedor' && !isGoogleOAuthUser) {
     return <VendedorJoinTeam />;
+  }
+
+  // Brand-new Google OAuth user without a team: ask whether they want to
+  // create a company or join an existing one before committing anything.
+  if (isGoogleOAuthUser && !intent) {
+    return (
+      <GoogleIntentChooser
+        onChoose={(v) => {
+          writeOAuthIntent(v);
+          setIntent(v);
+        }}
+      />
+    );
+  }
+
+  // Join-team branch for Google OAuth users who picked "join".
+  if (isGoogleOAuthUser && intent === 'join-team') {
+    return (
+      <VendedorJoinTeam
+        isGoogleOAuth
+        onBack={() => {
+          writeOAuthIntent(null);
+          setIntent(null);
+        }}
+      />
+    );
   }
 
   return <OnboardingWizard />;
 }
 
-function VendedorJoinTeam() {
+/**
+ * Intent chooser shown *after* Google OAuth completes but *before* we make
+ * any permanent changes. Exiting from this screen cleans up the auth user
+ * so the email address is freed up.
+ */
+function GoogleIntentChooser({ onChoose }: { onChoose: (v: OAuthIntent) => void }) {
   const navigate = useNavigate();
-  const { joinTeam, fetchProfile, fetchTeam, logout } = useAuthStore();
+  const { user } = useAuthStore();
+  const [leaving, setLeaving] = useState(false);
+
+  useAbandonmentCleanup(true, user?.id);
+
+  const handleCancel = async () => {
+    setLeaving(true);
+    await discardPendingGoogleUser(user?.id);
+    clearOAuthPending();
+    useAuthStore.setState({ user: null, profile: null, team: null });
+    navigate('/login', { replace: true });
+  };
+
+  return (
+    <div className="min-h-screen bg-surface-50 flex flex-col">
+      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-surface-100">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
+            <Zap className="h-5 w-5 text-white" />
+          </div>
+          <span className="text-xl font-bold text-surface-900">Orkesta</span>
+        </div>
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={leaving}
+          className="flex items-center gap-1.5 text-sm text-surface-400 hover:text-surface-600 transition-colors rounded-lg px-2 py-1 hover:bg-surface-100 disabled:opacity-50"
+        >
+          <X className="h-4 w-4" />
+          <span className="hidden sm:inline">Cancelar</span>
+        </button>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="w-full max-w-2xl space-y-8"
+        >
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-surface-900">
+              ¿Qué quieres hacer?
+            </h2>
+            <p className="mt-2 text-surface-500">
+              Elige cómo quieres empezar en Orkesta
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onChoose('create-company')}
+              className="flex flex-col items-center gap-4 rounded-2xl border-2 border-surface-200 bg-white p-8 transition-colors duration-200 hover:border-primary-400 hover:bg-primary-50/30"
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary-500 text-white">
+                <Building2 className="h-8 w-8" />
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-surface-900">Crear una empresa</p>
+                <p className="text-xs text-surface-400 mt-2">
+                  Configura un nuevo equipo y empieza a gestionar tu negocio
+                </p>
+              </div>
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onChoose('join-team')}
+              className="flex flex-col items-center gap-4 rounded-2xl border-2 border-surface-200 bg-white p-8 transition-colors duration-200 hover:border-primary-400 hover:bg-primary-50/30"
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-500 text-white">
+                <UserPlus className="h-8 w-8" />
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-surface-900">Unirme a un equipo</p>
+                <p className="text-xs text-surface-400 mt-2">
+                  Usa el código que te compartió tu gerente
+                </p>
+              </div>
+            </motion.button>
+          </div>
+
+          <p className="text-center text-xs text-surface-400">
+            Si cancelas ahora, tu cuenta no quedará registrada y podrás usar este correo más tarde.
+          </p>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+function VendedorJoinTeam({
+  isGoogleOAuth = false,
+  onBack,
+}: {
+  isGoogleOAuth?: boolean;
+  onBack?: () => void;
+} = {}) {
+  const navigate = useNavigate();
+  const { user, joinTeam, fetchProfile, fetchTeam, logout } = useAuthStore();
   const [teamCode, setTeamCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useAbandonmentCleanup(isGoogleOAuth, user?.id);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -80,9 +264,16 @@ function VendedorJoinTeam() {
     setError('');
     setLoading(true);
     try {
+      // For Google OAuth users, make sure the profile role is 'vendedor'
+      // before joining — the DB default / previous code may have left it
+      // as 'gerente'.
+      if (isGoogleOAuth && user) {
+        await supabase.from('profiles').update({ role: 'vendedor' }).eq('id', user.id);
+      }
       await joinTeam(teamCode.trim().toUpperCase());
       await fetchProfile();
       await fetchTeam();
+      clearOAuthPending();
       navigate('/dashboard');
     } catch {
       setError('Código de equipo inválido. Verifica con tu gerente.');
@@ -92,6 +283,15 @@ function VendedorJoinTeam() {
   };
 
   const handleLogout = async () => {
+    if (isGoogleOAuth) {
+      // Abandoning Google OAuth registration — drop the auth user so the
+      // email can be used again.
+      await discardPendingGoogleUser(user?.id);
+      clearOAuthPending();
+      useAuthStore.setState({ user: null, profile: null, team: null });
+      navigate('/login', { replace: true });
+      return;
+    }
     await logout();
     navigate('/login');
   };
@@ -111,7 +311,7 @@ function VendedorJoinTeam() {
           className="flex items-center gap-1.5 text-sm text-surface-400 hover:text-surface-600 transition-colors rounded-lg px-2 py-1 hover:bg-surface-100"
         >
           <X className="h-4 w-4" />
-          <span className="hidden sm:inline">Salir</span>
+          <span className="hidden sm:inline">{isGoogleOAuth ? 'Cancelar' : 'Salir'}</span>
         </button>
       </header>
 
@@ -153,15 +353,27 @@ function VendedorJoinTeam() {
               </motion.p>
             )}
 
-            <Button
-              type="submit"
-              loading={loading}
-              size="lg"
-              className="w-full"
-              disabled={!teamCode.trim()}
-            >
-              Unirme al equipo
-            </Button>
+            <div className="flex items-center justify-between gap-3">
+              {onBack && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={onBack}
+                  icon={<ArrowLeft className="h-4 w-4" />}
+                >
+                  Atrás
+                </Button>
+              )}
+              <Button
+                type="submit"
+                loading={loading}
+                size="lg"
+                className={onBack ? '' : 'w-full'}
+                disabled={!teamCode.trim()}
+              >
+                Unirme al equipo
+              </Button>
+            </div>
           </form>
         </motion.div>
       </div>
@@ -172,6 +384,9 @@ function VendedorJoinTeam() {
 function OnboardingWizard() {
   const navigate = useNavigate();
   const { user, profile, pendingRegistration, clearPendingRegistration, fetchProfile, fetchTeam } = useAuthStore();
+
+  const isGoogleOAuthUser = !pendingRegistration && !!user && isOAuthOnboardingPending();
+  useAbandonmentCleanup(isGoogleOAuthUser, user?.id);
 
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1);
@@ -357,6 +572,7 @@ function OnboardingWizard() {
       }
 
       clearPendingRegistration();
+      clearOAuthPending();
 
       // Refresh auth store so ProtectedRoute sees the updated team_id
       await fetchProfile();
@@ -406,14 +622,28 @@ function OnboardingWizard() {
     navigate('/dashboard');
   };
 
-  const handleGoBack = () => {
+  const handleGoBack = async () => {
     if (pendingRegistration) {
-      // Gerente registration flow: go back to register
+      // Gerente registration flow: go back to register (no auth user exists yet)
       navigate('/register');
-    } else {
-      // Google OAuth flow: go back to login
-      navigate('/login');
+      return;
     }
+    if (isGoogleOAuthUser) {
+      // Google OAuth flow: delete the pending auth user so the email is freed.
+      await discardPendingGoogleUser(user?.id);
+      clearOAuthPending();
+      useAuthStore.setState({ user: null, profile: null, team: null });
+    }
+    navigate('/login');
+  };
+
+  const handleExit = async () => {
+    if (isGoogleOAuthUser) {
+      await discardPendingGoogleUser(user?.id);
+      clearOAuthPending();
+      useAuthStore.setState({ user: null, profile: null, team: null });
+    }
+    navigate('/login');
   };
 
   return (
@@ -433,7 +663,7 @@ function OnboardingWizard() {
           {step < TOTAL_STEPS && (
             <button
               type="button"
-              onClick={() => navigate('/login')}
+              onClick={handleExit}
               className="flex items-center gap-1.5 text-sm text-surface-400 hover:text-surface-600 transition-colors rounded-lg px-2 py-1 hover:bg-surface-100"
               title="Salir del registro"
             >

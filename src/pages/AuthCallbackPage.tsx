@@ -53,60 +53,56 @@ export default function AuthCallbackPage() {
         }
 
         if (profile?.team_id) {
-          // Profile exists and has a team — fetch team data and go to dashboard.
+          // Existing user — just fetch team data and go to dashboard.
           await store.fetchTeam();
           navigate('/dashboard', { replace: true });
-        } else {
-          // New Google OAuth user without a team needs to go through gerente
-          // onboarding. The DB trigger defaults role to 'vendedor', but Google
-          // registration is only available for gerentes (the button is hidden
-          // for vendedores). Fix the role so OnboardingPage shows the correct
-          // wizard instead of the join-team form.
-          if (profile && profile.role !== 'gerente') {
-            const { error: updateErr } = await supabase
-              .from('profiles')
-              .update({ role: 'gerente' })
-              .eq('id', profile.id);
-            if (!updateErr) {
-              useAuthStore.setState({
-                profile: { ...profile, role: 'gerente' },
-              });
-            }
-          } else if (!profile) {
-            // Profile still doesn't exist — create it manually as gerente.
-            const userId = session.user.id;
-            const email = session.user.email ?? '';
-            const fullName =
-              (session.user.user_metadata?.full_name as string) ??
-              (session.user.user_metadata?.name as string) ??
-              email;
-            const avatarUrl =
-              (session.user.user_metadata?.avatar_url as string) ?? null;
-
-            const { error: insertErr } = await supabase.from('profiles').insert({
-              id: userId,
-              email,
-              full_name: fullName,
-              avatar_url: avatarUrl,
-              role: 'gerente',
-            });
-            if (!insertErr) {
-              useAuthStore.setState({
-                profile: {
-                  id: userId,
-                  email,
-                  full_name: fullName,
-                  avatar_url: avatarUrl,
-                  role: 'gerente',
-                  is_active: true,
-                  created_at: new Date().toISOString(),
-                },
-              });
-            }
-          }
-
-          navigate('/onboarding', { replace: true });
+          return;
         }
+
+        // New Google OAuth user without a team. Don't commit the role yet —
+        // OnboardingPage will ask them whether they want to create a company
+        // (gerente) or join an existing team (vendedor) and set the role then.
+        // If the profile row doesn't exist at all, create a minimal one so
+        // later updates have something to target.
+        if (!profile) {
+          const userId = session.user.id;
+          const email = session.user.email ?? '';
+          const fullName =
+            (session.user.user_metadata?.full_name as string) ??
+            (session.user.user_metadata?.name as string) ??
+            email;
+          const avatarUrl =
+            (session.user.user_metadata?.avatar_url as string) ?? null;
+
+          const { error: insertErr } = await supabase.from('profiles').insert({
+            id: userId,
+            email,
+            full_name: fullName,
+            avatar_url: avatarUrl,
+          });
+          if (!insertErr) {
+            useAuthStore.setState({
+              profile: {
+                id: userId,
+                email,
+                full_name: fullName,
+                avatar_url: avatarUrl,
+                role: 'gerente',
+                is_active: true,
+                created_at: new Date().toISOString(),
+              },
+            });
+          }
+        }
+
+        // Mark this session as "Google OAuth pending onboarding" so the
+        // OnboardingPage shows the create-company / join-team chooser instead
+        // of jumping straight into the manager wizard, and so the Exit button
+        // knows to clean up the auth user on abandonment.
+        sessionStorage.setItem('oauth_onboarding_pending', '1');
+        sessionStorage.removeItem('oauth_onboarding_intent');
+
+        navigate('/onboarding', { replace: true });
       } catch (err) {
         console.error('AuthCallback error:', err);
         navigate('/login', { replace: true });
