@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { CustomerTable } from '@/components/customers/CustomerTable';
 import { CustomerForm } from '@/components/customers/CustomerForm';
+import { CustomerDetails } from '@/components/customers/CustomerDetails';
 import { TemplateDownloader } from '@/components/excel/TemplateDownloader';
 import { supabase } from '@/lib/supabase';
 import { isSupabaseConfigured } from '@/lib/config';
@@ -17,16 +18,13 @@ import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 
 const CUSTOMER_TEMPLATE_COLUMNS = [
-  { name: 'RFC', example: 'XAXX010101000' },
-  { name: 'NOMBRE CONTACTO', example: 'Juan Pérez García' },
-  { name: 'NOMBRE DE NEGOCIO', example: 'Refacciones El Rey' },
-  { name: 'ES TALLER', example: 'Sí' },
-  { name: 'ES DISTRIBUIDOR', example: 'No' },
-  { name: 'DIRECCIÓN', example: 'Av. Reforma 123, Col. Centro, CDMX' },
-  { name: 'CELULAR', example: '+52 55 1234 5678' },
+  { name: 'NOMBRE', example: 'Juan Pérez García' },
   { name: 'CORREOELECTRÓNICO', example: 'juan.perez@negocio.com' },
-  { name: 'CANAL ORIGEN', example: 'Instagram' },
-  { name: 'USUARIO INSTA / MESSENGER', example: '@juanperez_refacciones' },
+  { name: 'TELÉFONO', example: '+52 55 1234 5678' },
+  { name: 'CANAL', example: 'whatsapp' },
+  { name: 'RFC', example: 'XAXX010101000' },
+  { name: 'DIRECCIÓN DE ENTREGA', example: 'Av. Reforma 123, Col. Centro, CDMX' },
+  { name: 'DESCUENTO (%)', example: '40' },
   { name: 'NOTAS', example: 'Cliente frecuente, prefiere pago en efectivo' },
 ];
 
@@ -46,6 +44,8 @@ export default function CustomersPage() {
   const [formModalOpen, setFormModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
   const [formLoading, setFormLoading] = useState(false);
@@ -106,6 +106,12 @@ export default function CustomersPage() {
   function handleEdit(customer: Customer) {
     setEditingCustomer(customer);
     setFormModalOpen(true);
+  }
+
+  // Open view-only modal
+  function handleView(customer: Customer) {
+    setViewingCustomer(customer);
+    setViewModalOpen(true);
   }
 
   // Open delete confirmation
@@ -311,11 +317,25 @@ export default function CustomersPage() {
         customers={customers}
         onEdit={handleEdit}
         onDelete={handleDeleteClick}
+        onView={handleView}
         onAssignVendor={handleOpenAssignVendor}
         onStartConversation={handleOpenStartConversation}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
+
+      {/* View Details Modal */}
+      <Modal
+        isOpen={viewModalOpen}
+        onClose={() => {
+          setViewModalOpen(false);
+          setViewingCustomer(null);
+        }}
+        title="Detalles del cliente"
+        size="md"
+      >
+        {viewingCustomer && <CustomerDetails customer={viewingCustomer} />}
+      </Modal>
 
       {/* Add / Edit Modal */}
       <Modal
@@ -352,7 +372,7 @@ export default function CustomersPage() {
               <p className="text-sm font-semibold text-surface-800">Paso 1: Descarga la plantilla</p>
             </div>
             <p className="text-xs text-surface-500 leading-relaxed">
-              La plantilla incluye las columnas necesarias: RFC, nombre del contacto, negocio, tipo (taller o distribuidor), dirección, celular, correo, canal de origen e usuario de redes sociales.
+              La plantilla incluye las columnas necesarias: nombre, correo electrónico, teléfono, canal, RFC, dirección de entrega, descuento (%) y notas.
             </p>
             <TemplateDownloader
               templateName="Plantilla_Clientes_Orkesta"

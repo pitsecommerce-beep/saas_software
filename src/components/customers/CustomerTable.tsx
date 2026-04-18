@@ -26,6 +26,7 @@ interface CustomerTableProps {
   customers: Customer[];
   onEdit: (customer: Customer) => void;
   onDelete: (customer: Customer) => void;
+  onView?: (customer: Customer) => void;
   onAssignVendor?: (customer: Customer) => void;
   onStartConversation?: (customer: Customer) => void;
   searchQuery: string;
@@ -36,6 +37,7 @@ function CustomerTable({
   customers,
   onEdit,
   onDelete,
+  onView,
   onAssignVendor,
   onStartConversation,
   searchQuery,
@@ -87,9 +89,6 @@ function CustomerTable({
                 <th className="px-4 py-3 text-left font-semibold text-surface-600">
                   Nombre
                 </th>
-                <th className="px-4 py-3 text-left font-semibold text-surface-600 hidden sm:table-cell">
-                  Email
-                </th>
                 <th className="px-4 py-3 text-left font-semibold text-surface-600 hidden md:table-cell">
                   Teléfono
                 </th>
@@ -119,9 +118,10 @@ function CustomerTable({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.03 }}
+                    onClick={onView ? () => onView(customer) : undefined}
                     className={`border-b border-surface-50 transition-colors duration-150 hover:bg-primary-50/40 ${
                       index % 2 === 0 ? 'bg-white' : 'bg-surface-50/50'
-                    }`}
+                    } ${onView ? 'cursor-pointer' : ''}`}
                   >
                     {/* Nombre */}
                     <td className="px-4 py-3">
@@ -131,11 +131,6 @@ function CustomerTable({
                           {customer.name}
                         </span>
                       </div>
-                    </td>
-
-                    {/* Email */}
-                    <td className="px-4 py-3 text-surface-600 hidden sm:table-cell">
-                      {customer.email || <span className="text-surface-300">—</span>}
                     </td>
 
                     {/* Teléfono */}
@@ -187,7 +182,10 @@ function CustomerTable({
                     </td>
 
                     {/* Acciones */}
-                    <td className="px-4 py-3">
+                    <td
+                      className="px-4 py-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex items-center justify-end gap-1">
                         {onStartConversation && (
                           <Button
