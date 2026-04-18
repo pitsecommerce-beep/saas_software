@@ -422,13 +422,6 @@ async function processAIResponse(
             customerPhone
           );
           break;
-        case 'actualizar_descuento_cliente':
-          result = await executeActualizarDescuentoCliente(
-            part.toolArgs ?? {},
-            teamId,
-            customerPhone
-          );
-          break;
         case 'actualizar_direccion_cliente':
           result = await executeActualizarDireccionCliente(
             part.toolArgs ?? {},
@@ -1147,52 +1140,6 @@ async function executeConsultarCliente(
   } catch (err) {
     console.error('Error in executeConsultarCliente:', err);
     return JSON.stringify({ success: false, error: 'Error consultando los datos del cliente' });
-  }
-}
-
-async function executeActualizarDescuentoCliente(
-  args: Record<string, unknown>,
-  teamId: string,
-  senderPhone: string
-): Promise<string> {
-  try {
-    const rawPct = Number(args.porcentaje_descuento);
-    if (!Number.isFinite(rawPct) || rawPct < 0 || rawPct > 100) {
-      return JSON.stringify({
-        success: false,
-        error: 'porcentaje_descuento debe ser un número entre 0 y 100.',
-      });
-    }
-    const phone = (typeof args.celular === 'string' && args.celular.trim()) || senderPhone;
-    const customer = await findCustomerByPhone(teamId, phone);
-    if (!customer) {
-      return JSON.stringify({
-        success: false,
-        error: `No se encontró un cliente con el celular ${phone}.`,
-      });
-    }
-
-    const newDiscount = Math.round(rawPct * 100) / 100;
-    const { error } = await supabase
-      .from('customers')
-      .update({ discount_percentage: newDiscount, updated_at: new Date().toISOString() })
-      .eq('id', customer.id)
-      .eq('team_id', teamId);
-
-    if (error) {
-      console.error('Error updating customer discount:', error);
-      return JSON.stringify({ success: false, error: 'Error guardando el descuento del cliente.' });
-    }
-
-    return JSON.stringify({
-      success: true,
-      cliente_id: customer.id,
-      porcentaje_descuento: newDiscount,
-      mensaje: `Descuento actualizado a ${newDiscount}% para ${customer.name}.`,
-    });
-  } catch (err) {
-    console.error('Error in executeActualizarDescuentoCliente:', err);
-    return JSON.stringify({ success: false, error: 'Error interno al actualizar el descuento' });
   }
 }
 

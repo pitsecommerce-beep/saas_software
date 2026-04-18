@@ -81,23 +81,6 @@ const TOOL_DEFINITIONS: Record<string, { description: string; parameters: Record
       },
     },
   },
-  actualizar_descuento_cliente: {
-    description: 'Actualiza manualmente el porcentaje de descuento del cliente que se aplica sobre el precio de lista en sus compras. Solo usar cuando el gerente o vendedor autorizado pida cambiar el descuento. El default para clientes nuevos es 40%.',
-    parameters: {
-      type: 'object',
-      properties: {
-        porcentaje_descuento: {
-          type: 'number',
-          description: 'Nuevo porcentaje de descuento (0 a 100).',
-        },
-        celular: {
-          type: 'string',
-          description: 'Número de celular del cliente (opcional, por defecto el del remitente).',
-        },
-      },
-      required: ['porcentaje_descuento'],
-    },
-  },
   actualizar_direccion_cliente: {
     description: 'Guarda o actualiza la dirección de envío del cliente. Usar cuando el cliente no tiene dirección registrada y la proporciona, o cuando pide actualizar la dirección existente. Antes de actualizar una dirección existente, confirma con el cliente el cambio.',
     parameters: {
@@ -239,11 +222,6 @@ Al iniciar una conversación o cuando necesites saber datos del cliente, usa con
 2. Si el cliente NO tiene dirección registrada y el pedido requiere envío, solicítala antes de crear el pedido.
 3. Si el cliente SÍ tiene dirección registrada, confírmala textualmente con el cliente antes del envío y ofrécele la opción de actualizarla.
 4. Si el descuento del cliente NO es el default (40%), tenlo presente al calcular precios y menciónaselo cuando sea relevante.`;
-  }
-
-  if (enabledTools?.includes('actualizar_descuento_cliente')) {
-    prompt += `\n\n--- Instrucciones para descuento del cliente ---
-Solo cambia el descuento si el cliente (autorizado) o el vendedor lo pide explícitamente. Usa actualizar_descuento_cliente con el nuevo porcentaje (0 a 100). Confirma el nuevo descuento con el cliente después de actualizarlo.`;
   }
 
   if (enabledTools?.includes('actualizar_direccion_cliente')) {
