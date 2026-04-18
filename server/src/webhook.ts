@@ -453,6 +453,14 @@ async function processAIResponse(
         content: assistantContent || null,
         tool_calls: toolCalls,
       });
+      // Append tool results as individual tool messages
+      for (const tr of toolResults) {
+        providerMessages.push({
+          role: 'tool',
+          tool_call_id: tr.toolCallId,
+          content: tr.result,
+        });
+      }
     } else if (agent.provider === 'anthropic') {
       // Anthropic: add assistant message with content blocks
       const contentBlocks: unknown[] = [];
@@ -469,6 +477,15 @@ async function processAIResponse(
         }
       }
       providerMessages.push({ role: 'assistant', content: contentBlocks });
+      // Append tool_result blocks as a user turn (must immediately follow tool_use)
+      providerMessages.push({
+        role: 'user',
+        content: toolResults.map((tr) => ({
+          type: 'tool_result',
+          tool_use_id: tr.toolCallId,
+          content: tr.result,
+        })),
+      });
     } else if (agent.provider === 'google') {
       // Google: add model turn with functionCall parts
       const parts: unknown[] = [];
@@ -480,6 +497,16 @@ async function processAIResponse(
         }
       }
       providerMessages.push({ role: 'model', parts });
+      // Append functionResponse parts as a user turn
+      providerMessages.push({
+        role: 'user',
+        parts: toolResults.map((tr) => ({
+          functionResponse: {
+            name: tr.toolCallId,
+            response: { result: tr.result },
+          },
+        })),
+      });
     }
 
     // Continue the conversation with tool results
@@ -606,16 +633,17 @@ async function executeCrearPedidoWithGuard(
     }
 
     if (isDuplicate) {
-      const shortId = (lastOrder.id as string).slice(0, 8);
+      const fullId = lastOrder.id as string;
+      const shortId = fullId.slice(0, 8);
       const total = lastOrder.total as number;
-      console.log(`[Guard] Blocked duplicate order. Request matches existing order #${shortId}`);
+      console.log(`[Guard] Blocked duplicate order. Request matches existing order ${fullId}`);
       return JSON.stringify({
         success: false,
         blocked_duplicate: true,
-        existing_order_id: lastOrder.id,
+        existing_order_id: fullId,
         existing_order_short_id: shortId,
         existing_total: total,
-        message: `Ya existe un pedido (#${shortId}) con exactamente estos productos. Total: $${total.toFixed(2)}. No se creó un pedido nuevo.`,
+        message: `Ya existe un pedido (Número de pedido: ${fullId}) con exactamente estos productos. Total: $${total.toFixed(2)}. No se creó un pedido nuevo.`,
       });
     }
   }
@@ -777,7 +805,7 @@ async function executeCrearPedido(
       items_count: orderItems.length,
       descuento_aplicado: `${discountPct}%`,
       metodo_entrega: deliveryMethod,
-      summary: `Pedido creado exitosamente.\n\nProductos (precios ya incluyen descuento del ${discountPct}% sobre lista):\n${itemsSummary}\n\nTotal: $${total.toFixed(2)} MXN\nTipo de entrega: ${deliveryLabel}\nEstado: Pendiente de pago`,
+      summary: `Pedido creado exitosamente.\n\nNúmero de pedido: ${order.id}\n\nProductos (precios ya incluyen descuento del ${discountPct}% sobre lista):\n${itemsSummary}\n\nTotal: $${total.toFixed(2)} MXN\nTipo de entrega: ${deliveryLabel}\nEstado: Pendiente de pago\n\nIMPORTANTE: Siempre comunica al cliente el número de pedido COMPLETO, no abreviado.`,
     });
   } catch (err) {
     console.error('Error in executeCrearPedido:', err);
@@ -938,6 +966,7 @@ async function executeConsultarPedido(
       encontrado: true,
       pedido: {
         id: order.id,
+        id_completo: order.id,
         id_corto: (order.id as string).slice(0, 8),
         estado: statusLabels[order.status as string] ?? order.status,
         total: order.total,
@@ -946,6 +975,7 @@ async function executeConsultarPedido(
         fecha: order.created_at,
         productos: items,
       },
+      instruccion_para_agente: 'Usa siempre el ID completo al comunicar al cliente',
     });
   } catch (err) {
     console.error('Error in executeConsultarPedido:', err);
