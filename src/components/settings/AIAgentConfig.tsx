@@ -47,12 +47,6 @@ const AGENT_TOOLS: { id: string; label: string; description: string }[] = [
       'Al iniciar una conversación, el agente consulta automáticamente el descuento asignado al cliente y si tiene una dirección de envío registrada. Esencial para pedidos con envío.',
   },
   {
-    id: 'actualizar_descuento_cliente',
-    label: 'Actualizar descuento del cliente',
-    description:
-      'Permite modificar manualmente el porcentaje de descuento del cliente sobre el precio de lista. El default es 40%. Solo debe habilitarse si el agente tiene permiso de ajustar descuentos.',
-  },
-  {
     id: 'actualizar_direccion_cliente',
     label: 'Registrar / actualizar dirección de envío',
     description:
