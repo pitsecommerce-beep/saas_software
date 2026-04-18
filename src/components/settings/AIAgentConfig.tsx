@@ -26,7 +26,7 @@ const AGENT_TOOLS: { id: string; label: string; description: string }[] = [
     id: 'crear_pedido',
     label: 'Crear pedido',
     description:
-      'Permite al agente crear pedidos durante la conversación cuando el cliente confirma una compra. Incluye consulta de disponibilidad automáticamente.',
+      'Permite al agente crear pedidos durante la conversación cuando el cliente confirma una compra. Aplica el descuento del cliente sobre el precio de lista y solicita el tipo de entrega. Incluye consulta de disponibilidad automáticamente.',
   },
   {
     id: 'consultar_pedido',
@@ -39,6 +39,24 @@ const AGENT_TOOLS: { id: string; label: string; description: string }[] = [
     label: 'Generar link de pago',
     description:
       'Permite al agente generar links de pago de Mercado Pago o Stripe y enviarlos al cliente durante la conversación. Requiere configurar el proveedor de pagos en la pestaña de Configuración.',
+  },
+  {
+    id: 'consultar_cliente',
+    label: 'Consultar cliente (descuento y dirección)',
+    description:
+      'Al iniciar una conversación, el agente consulta automáticamente el descuento asignado al cliente y si tiene una dirección de envío registrada. Esencial para pedidos con envío.',
+  },
+  {
+    id: 'actualizar_descuento_cliente',
+    label: 'Actualizar descuento del cliente',
+    description:
+      'Permite modificar manualmente el porcentaje de descuento del cliente sobre el precio de lista. El default es 40%. Solo debe habilitarse si el agente tiene permiso de ajustar descuentos.',
+  },
+  {
+    id: 'actualizar_direccion_cliente',
+    label: 'Registrar / actualizar dirección de envío',
+    description:
+      'Permite al agente solicitar y guardar la dirección de envío del cliente cuando no está registrada, o actualizarla a petición del cliente. Requerido para crear pedidos con ENVÍO DIRECTO o ENVÍO EN RUTA.',
   },
 ];
 

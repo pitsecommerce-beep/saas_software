@@ -377,14 +377,18 @@ function DashboardPage() {
               const channelColor = conv.channel === 'whatsapp' ? 'bg-green-50 text-green-700' : conv.channel === 'instagram' ? 'bg-pink-50 text-pink-700' : 'bg-blue-50 text-blue-700';
               const statusColorMap: Record<string, string> = {
                 nuevo: 'bg-blue-50 text-blue-700',
-                ai_attended: 'bg-violet-50 text-violet-700',
+                saludo_inicial: 'bg-sky-50 text-sky-700',
+                cotizando: 'bg-violet-50 text-violet-700',
+                ai_attended: 'bg-sky-50 text-sky-700',
                 payment_pending: 'bg-amber-50 text-amber-700',
                 immediate_attention: 'bg-danger-50 text-danger-700',
                 closed: 'bg-surface-100 text-surface-500',
               };
               const statusLabelMap: Record<string, string> = {
                 nuevo: 'Nuevo',
-                ai_attended: 'Atendido IA',
+                saludo_inicial: 'Saludo Inicial',
+                cotizando: 'Cotizando',
+                ai_attended: 'Saludo Inicial',
                 payment_pending: 'Pago Pendiente',
                 immediate_attention: 'Atención Inmediata',
                 closed: 'Cerrada',

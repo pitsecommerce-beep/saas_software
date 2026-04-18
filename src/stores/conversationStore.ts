@@ -42,7 +42,7 @@ const mockConversations: Conversation[] = [
     },
     channel: 'instagram',
     channel_contact_id: '@carloslopez',
-    status: 'ai_attended',
+    status: 'saludo_inicial',
     is_ai_enabled: false,
     last_message: '¿Tienen envío a Guadalajara?',
     last_message_at: new Date(Date.now() - 3600000).toISOString(),

@@ -271,6 +271,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     sanitizedMessages,
     teamId,
     customer.id,
+    senderPhone,
     conversation.id,
     currentDateTime
   );
@@ -352,6 +353,7 @@ async function processAIResponse(
   messages: { sender_type: string; content: string; created_at: string }[],
   teamId: string,
   customerId: string,
+  customerPhone: string,
   conversationId: string,
   currentDateTime?: string
 ): Promise<string | null> {
@@ -411,6 +413,27 @@ async function processAIResponse(
             part.toolArgs ?? {},
             teamId,
             conversationId
+          );
+          break;
+        case 'consultar_cliente':
+          result = await executeConsultarCliente(
+            part.toolArgs ?? {},
+            teamId,
+            customerPhone
+          );
+          break;
+        case 'actualizar_descuento_cliente':
+          result = await executeActualizarDescuentoCliente(
+            part.toolArgs ?? {},
+            teamId,
+            customerPhone
+          );
+          break;
+        case 'actualizar_direccion_cliente':
+          result = await executeActualizarDireccionCliente(
+            part.toolArgs ?? {},
+            teamId,
+            customerPhone
           );
           break;
         default:
@@ -617,9 +640,36 @@ async function executeCrearPedido(
   try {
     const productos = args.productos as Array<{ nombre: string; sku?: string; cantidad: number }>;
     const notas = args.notas as string | undefined;
+    const metodoEntregaRaw = typeof args.metodo_entrega === 'string' ? args.metodo_entrega : undefined;
+    const VALID_METHODS = ['cliente_recoge', 'envio_directo', 'envio_en_ruta'] as const;
+    const deliveryMethod = VALID_METHODS.includes(metodoEntregaRaw as typeof VALID_METHODS[number])
+      ? metodoEntregaRaw
+      : null;
 
     if (!productos || productos.length === 0) {
       return JSON.stringify({ success: false, error: 'No se especificaron productos' });
+    }
+
+    // Load customer to get discount and address for delivery validation
+    const { data: customerRow } = await supabase
+      .from('customers')
+      .select('discount_percentage, delivery_address')
+      .eq('id', customerId)
+      .maybeSingle();
+
+    const discountPct = Math.max(
+      0,
+      Math.min(100, Number(customerRow?.discount_percentage ?? 40))
+    );
+    const discountFactor = 1 - discountPct / 100;
+
+    if ((deliveryMethod === 'envio_directo' || deliveryMethod === 'envio_en_ruta') &&
+        !customerRow?.delivery_address) {
+      return JSON.stringify({
+        success: false,
+        error: 'El cliente no tiene dirección de envío registrada. Solicítala y guárdala con actualizar_direccion_cliente antes de crear un pedido con envío.',
+        missing_address: true,
+      });
     }
 
     // Look up each product in knowledge_rows to get prices
@@ -630,6 +680,7 @@ async function executeCrearPedido(
       unit_price: number;
       subtotal: number;
       knowledge_row_id: string | null;
+      list_price: number;
     }> = [];
 
     for (const prod of productos) {
@@ -641,7 +692,7 @@ async function executeCrearPedido(
           p_limit: 3,
         });
 
-      let unitPrice = 0;
+      let listPrice = 0;
       let knowledgeRowId: string | null = null;
       let productName = prod.nombre;
       let sku = prod.sku || null;
@@ -650,8 +701,8 @@ async function executeCrearPedido(
         const rowData = rows[0].row_data as Record<string, unknown>;
         knowledgeRowId = rows[0].id;
 
-        // Try to get price from common field names
-        unitPrice = parseFloat(String(
+        // Try to get price from common field names (precio de lista / precio de venta)
+        listPrice = parseFloat(String(
           rowData.precio_venta ?? rowData.precio ?? rowData.price ?? rowData.unit_price ?? 0
         )) || 0;
 
@@ -660,13 +711,17 @@ async function executeCrearPedido(
         if (rowData.sku) sku = String(rowData.sku);
       }
 
+      // Apply customer discount over list price
+      const unitPrice = Math.round(listPrice * discountFactor * 100) / 100;
+
       orderItems.push({
         product_name: productName,
         sku,
         quantity: prod.cantidad,
         unit_price: unitPrice,
-        subtotal: unitPrice * prod.cantidad,
+        subtotal: Math.round(unitPrice * prod.cantidad * 100) / 100,
         knowledge_row_id: knowledgeRowId,
+        list_price: listPrice,
       });
     }
 
@@ -681,6 +736,7 @@ async function executeCrearPedido(
         conversation_id: conversationId,
         status: 'pendiente_pago',
         total,
+        delivery_method: deliveryMethod,
         notes: notas ?? null,
       })
       .select('id')
@@ -715,12 +771,20 @@ async function executeCrearPedido(
       (item) => `- ${item.product_name}${item.sku ? ` (${item.sku})` : ''}: ${item.quantity} x $${item.unit_price.toFixed(2)} = $${item.subtotal.toFixed(2)}`
     ).join('\n');
 
+    const deliveryLabel =
+      deliveryMethod === 'cliente_recoge' ? 'CLIENTE RECOGE' :
+      deliveryMethod === 'envio_directo' ? 'ENVÍO DIRECTO' :
+      deliveryMethod === 'envio_en_ruta' ? 'ENVÍO EN RUTA' :
+      'Sin definir';
+
     return JSON.stringify({
       success: true,
       order_id: order.id,
       total: total.toFixed(2),
       items_count: orderItems.length,
-      summary: `Pedido creado exitosamente.\n\nProductos:\n${itemsSummary}\n\nTotal: $${total.toFixed(2)} MXN\nEstado: Pendiente de pago`,
+      descuento_aplicado: `${discountPct}%`,
+      metodo_entrega: deliveryMethod,
+      summary: `Pedido creado exitosamente.\n\nProductos (precios ya incluyen descuento del ${discountPct}% sobre lista):\n${itemsSummary}\n\nTotal: $${total.toFixed(2)} MXN\nTipo de entrega: ${deliveryLabel}\nEstado: Pendiente de pago`,
     });
   } catch (err) {
     console.error('Error in executeCrearPedido:', err);
@@ -1019,6 +1083,162 @@ async function executeGenerarLinkPago(
   } catch (err) {
     console.error('Error in executeGenerarLinkPago:', err);
     return JSON.stringify({ success: false, error: 'Error al generar el link de pago. Verifica la configuración del proveedor.' });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Customer-facing tools (discount, address)
+// ---------------------------------------------------------------------------
+
+async function findCustomerByPhone(teamId: string, phone: string) {
+  const withPlus = phone.startsWith('+') ? phone : `+${phone}`;
+  const withoutPlus = phone.replace(/^\+/, '');
+
+  const { data } = await supabase
+    .from('customers')
+    .select('id, name, phone, channel_id, discount_percentage, delivery_address')
+    .eq('team_id', teamId)
+    .or(
+      `phone.eq.${phone},phone.eq.${withPlus},phone.eq.${withoutPlus},channel_id.eq.${phone},channel_id.eq.${withPlus},channel_id.eq.${withoutPlus}`
+    )
+    .limit(1)
+    .maybeSingle();
+
+  return data;
+}
+
+async function executeConsultarCliente(
+  args: Record<string, unknown>,
+  teamId: string,
+  senderPhone: string
+): Promise<string> {
+  try {
+    const phone = (typeof args.celular === 'string' && args.celular.trim()) || senderPhone;
+    const customer = await findCustomerByPhone(teamId, phone);
+
+    if (!customer) {
+      return JSON.stringify({
+        success: true,
+        encontrado: false,
+        mensaje: `No se encontró un cliente registrado con el celular ${phone}. Se usará el descuento por defecto del 40% y habrá que registrar su dirección antes de cualquier envío.`,
+        descuento_default: 40,
+      });
+    }
+
+    const discount = Number(customer.discount_percentage ?? 40);
+    const hasAddress = !!(customer.delivery_address && String(customer.delivery_address).trim());
+
+    return JSON.stringify({
+      success: true,
+      encontrado: true,
+      cliente: {
+        id: customer.id,
+        nombre: customer.name,
+        celular: customer.phone ?? customer.channel_id,
+        porcentaje_descuento: discount,
+        es_descuento_default: discount === 40,
+        tiene_direccion: hasAddress,
+        direccion_envio: hasAddress ? customer.delivery_address : null,
+      },
+      instruccion_para_agente: hasAddress
+        ? 'El cliente tiene dirección registrada. Confírmala con el cliente antes del envío y ofrécele actualizarla si hace falta.'
+        : 'El cliente NO tiene dirección registrada. Si el pedido requiere envío, solicítasela y guárdala con actualizar_direccion_cliente antes de crear el pedido.',
+    });
+  } catch (err) {
+    console.error('Error in executeConsultarCliente:', err);
+    return JSON.stringify({ success: false, error: 'Error consultando los datos del cliente' });
+  }
+}
+
+async function executeActualizarDescuentoCliente(
+  args: Record<string, unknown>,
+  teamId: string,
+  senderPhone: string
+): Promise<string> {
+  try {
+    const rawPct = Number(args.porcentaje_descuento);
+    if (!Number.isFinite(rawPct) || rawPct < 0 || rawPct > 100) {
+      return JSON.stringify({
+        success: false,
+        error: 'porcentaje_descuento debe ser un número entre 0 y 100.',
+      });
+    }
+    const phone = (typeof args.celular === 'string' && args.celular.trim()) || senderPhone;
+    const customer = await findCustomerByPhone(teamId, phone);
+    if (!customer) {
+      return JSON.stringify({
+        success: false,
+        error: `No se encontró un cliente con el celular ${phone}.`,
+      });
+    }
+
+    const newDiscount = Math.round(rawPct * 100) / 100;
+    const { error } = await supabase
+      .from('customers')
+      .update({ discount_percentage: newDiscount, updated_at: new Date().toISOString() })
+      .eq('id', customer.id)
+      .eq('team_id', teamId);
+
+    if (error) {
+      console.error('Error updating customer discount:', error);
+      return JSON.stringify({ success: false, error: 'Error guardando el descuento del cliente.' });
+    }
+
+    return JSON.stringify({
+      success: true,
+      cliente_id: customer.id,
+      porcentaje_descuento: newDiscount,
+      mensaje: `Descuento actualizado a ${newDiscount}% para ${customer.name}.`,
+    });
+  } catch (err) {
+    console.error('Error in executeActualizarDescuentoCliente:', err);
+    return JSON.stringify({ success: false, error: 'Error interno al actualizar el descuento' });
+  }
+}
+
+async function executeActualizarDireccionCliente(
+  args: Record<string, unknown>,
+  teamId: string,
+  senderPhone: string
+): Promise<string> {
+  try {
+    const direccion = typeof args.direccion === 'string' ? args.direccion.trim() : '';
+    if (!direccion) {
+      return JSON.stringify({ success: false, error: 'La dirección no puede estar vacía.' });
+    }
+    const phone = (typeof args.celular === 'string' && args.celular.trim()) || senderPhone;
+    const customer = await findCustomerByPhone(teamId, phone);
+    if (!customer) {
+      return JSON.stringify({
+        success: false,
+        error: `No se encontró un cliente con el celular ${phone}.`,
+      });
+    }
+
+    const prevAddress = customer.delivery_address ?? null;
+    const { error } = await supabase
+      .from('customers')
+      .update({ delivery_address: direccion, updated_at: new Date().toISOString() })
+      .eq('id', customer.id)
+      .eq('team_id', teamId);
+
+    if (error) {
+      console.error('Error updating customer address:', error);
+      return JSON.stringify({ success: false, error: 'Error guardando la dirección del cliente.' });
+    }
+
+    return JSON.stringify({
+      success: true,
+      cliente_id: customer.id,
+      direccion_anterior: prevAddress,
+      direccion_envio: direccion,
+      mensaje: prevAddress
+        ? `Dirección actualizada para ${customer.name}.`
+        : `Dirección registrada para ${customer.name}.`,
+    });
+  } catch (err) {
+    console.error('Error in executeActualizarDireccionCliente:', err);
+    return JSON.stringify({ success: false, error: 'Error interno al actualizar la dirección' });
   }
 }
 

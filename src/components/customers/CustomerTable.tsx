@@ -99,6 +99,9 @@ function CustomerTable({
                 <th className="px-4 py-3 text-left font-semibold text-surface-600 hidden lg:table-cell">
                   Vendedor
                 </th>
+                <th className="px-4 py-3 text-left font-semibold text-surface-600 hidden md:table-cell">
+                  Descuento
+                </th>
                 <th className="px-4 py-3 text-left font-semibold text-surface-600 hidden xl:table-cell">
                   Fecha de Alta
                 </th>
@@ -165,6 +168,13 @@ function CustomerTable({
                       ) : (
                         <span className="text-xs text-surface-300">Sin asignar</span>
                       )}
+                    </td>
+
+                    {/* Descuento */}
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      <span className="inline-flex items-center rounded-md bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                        {(customer.discount_percentage ?? 40)}%
+                      </span>
                     </td>
 
                     {/* Fecha de Alta */}

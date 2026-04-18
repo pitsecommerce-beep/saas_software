@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Customer, ChannelType } from '@/types';
+import { DEFAULT_CUSTOMER_DISCOUNT } from '@/types';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
@@ -23,6 +24,7 @@ interface CustomerFormProps {
     channel: ChannelType;
     rfc: string;
     delivery_address: string;
+    discount_percentage: number;
     notes: string;
   }) => void;
   onCancel: () => void;
@@ -36,6 +38,11 @@ function CustomerForm({ customer, onSubmit, onCancel, loading }: CustomerFormPro
   const [channel, setChannel] = useState<ChannelType>(customer?.channel ?? 'whatsapp');
   const [rfc, setRfc] = useState(customer?.rfc ?? '');
   const [deliveryAddress, setDeliveryAddress] = useState(customer?.delivery_address ?? '');
+  const [discountPercentage, setDiscountPercentage] = useState<string>(
+    customer?.discount_percentage != null
+      ? String(customer.discount_percentage)
+      : String(DEFAULT_CUSTOMER_DISCOUNT)
+  );
   const [notes, setNotes] = useState(customer?.notes ?? '');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -49,6 +56,11 @@ function CustomerForm({ customer, onSubmit, onCancel, loading }: CustomerFormPro
 
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       errs.email = 'Formato de email inválido';
+    }
+
+    const parsedDiscount = parseFloat(discountPercentage);
+    if (Number.isNaN(parsedDiscount) || parsedDiscount < 0 || parsedDiscount > 100) {
+      errs.discount_percentage = 'Ingresa un porcentaje entre 0 y 100';
     }
 
     setErrors(errs);
@@ -65,6 +77,7 @@ function CustomerForm({ customer, onSubmit, onCancel, loading }: CustomerFormPro
       channel,
       rfc: rfc.trim(),
       delivery_address: deliveryAddress.trim(),
+      discount_percentage: parseFloat(discountPercentage),
       notes: notes.trim(),
     });
   }
@@ -118,6 +131,23 @@ function CustomerForm({ customer, onSubmit, onCancel, loading }: CustomerFormPro
         onChange={(e) => setDeliveryAddress(e.target.value)}
         rows={2}
       />
+
+      <div>
+        <Input
+          label={`Descuento sobre precio de lista (%) — default ${DEFAULT_CUSTOMER_DISCOUNT}%`}
+          type="number"
+          min={0}
+          max={100}
+          step={0.5}
+          placeholder={String(DEFAULT_CUSTOMER_DISCOUNT)}
+          value={discountPercentage}
+          onChange={(e) => setDiscountPercentage(e.target.value)}
+          error={errors.discount_percentage}
+        />
+        <p className="mt-1 text-xs text-surface-500">
+          Se aplica al precio de venta (lista) en cada pedido del cliente. Se puede modificar manualmente.
+        </p>
+      </div>
 
       <Textarea
         label="Notas"
