@@ -1,6 +1,6 @@
 export type UserRole = 'gerente' | 'vendedor' | 'logistica';
 export type BusinessType = 'retailer' | 'servicios';
-export type ConversationStatus = 'nuevo' | 'ai_attended' | 'payment_pending' | 'immediate_attention' | 'closed';
+export type ConversationStatus = 'nuevo' | 'saludo_inicial' | 'cotizando' | 'ai_attended' | 'payment_pending' | 'immediate_attention' | 'closed';
 export type MessageSender = 'customer' | 'agent' | 'ai';
 export type ChannelType = 'whatsapp' | 'instagram' | 'messenger';
 
@@ -14,6 +14,10 @@ export type OrderStatus =
   | 'entregado'
   | 'cancelado'
   | 'requiere_atencion';
+
+export type DeliveryMethod = 'cliente_recoge' | 'envio_directo' | 'envio_en_ruta';
+
+export const DEFAULT_CUSTOMER_DISCOUNT = 40;
 
 export interface Team {
   id: string;
@@ -46,6 +50,7 @@ export interface Customer {
   channel_id?: string;
   rfc?: string;
   delivery_address?: string;
+  discount_percentage?: number;
   notes?: string;
   assigned_to?: string;
   assigned_profile?: Profile;
@@ -105,6 +110,7 @@ export interface Order {
   status: OrderStatus;
   total?: number;
   notes?: string;
+  delivery_method?: DeliveryMethod;
   created_at: string;
   updated_at: string;
   order_items?: OrderItem[];

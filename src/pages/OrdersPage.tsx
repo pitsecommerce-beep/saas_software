@@ -24,7 +24,20 @@ import { ORDER_STATUSES } from '@/config/modules';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CreateOrderModal } from '@/components/orders/CreateOrderModal';
-import type { OrderStatus } from '@/types';
+import type { OrderStatus, DeliveryMethod } from '@/types';
+
+const DELIVERY_METHOD_LABELS: Record<DeliveryMethod, string> = {
+  cliente_recoge: 'CLIENTE RECOGE',
+  envio_directo: 'ENVÍO DIRECTO',
+  envio_en_ruta: 'ENVÍO EN RUTA',
+};
+
+const DELIVERY_METHOD_OPTIONS: { value: DeliveryMethod | ''; label: string }[] = [
+  { value: '', label: 'Sin definir' },
+  { value: 'cliente_recoge', label: 'CLIENTE RECOGE' },
+  { value: 'envio_directo', label: 'ENVÍO DIRECTO' },
+  { value: 'envio_en_ruta', label: 'ENVÍO EN RUTA' },
+];
 
 interface OrderItemRow {
   id: string;
@@ -43,6 +56,7 @@ interface OrderRow {
   status: OrderStatus;
   total: number | null;
   notes: string | null;
+  delivery_method: DeliveryMethod | null;
   created_at: string;
   updated_at: string;
   customer?: { name: string } | null;
@@ -139,6 +153,25 @@ function OrdersPage() {
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  const updateOrderDeliveryMethod = async (orderId: string, newMethod: DeliveryMethod | null) => {
+    if (!isSupabaseConfigured || !teamId) return;
+    const { error } = await supabase
+      .from('orders')
+      .update({ delivery_method: newMethod, updated_at: new Date().toISOString() })
+      .eq('id', orderId)
+      .eq('team_id', teamId);
+
+    if (error) {
+      console.error('Error updating delivery method:', error);
+      return;
+    }
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId ? { ...o, delivery_method: newMethod, updated_at: new Date().toISOString() } : o
+      )
+    );
+  };
 
   const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
     if (!isSupabaseConfigured || !teamId) return;
@@ -538,10 +571,15 @@ function OrdersPage() {
                       {customerName}
                     </span>
                     <span className="text-sm text-surface-600">{channelLabel}</span>
-                    <div>
+                    <div className="flex flex-wrap items-center gap-1">
                       <Badge size="sm" className={getStatusColor(order.status)}>
                         {getStatusLabel(order.status)}
                       </Badge>
+                      {order.delivery_method && (
+                        <Badge size="sm" className="bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {DELIVERY_METHOD_LABELS[order.delivery_method]}
+                        </Badge>
+                      )}
                     </div>
                     <span className="text-sm font-semibold text-surface-800">
                       {formatCurrency(order.total)}
@@ -794,6 +832,22 @@ function OrdersPage() {
                                 >
                                   {ORDER_STATUSES.map((s) => (
                                     <option key={s.id} value={s.id}>{s.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Delivery method */}
+                              <div>
+                                <h4 className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-1">
+                                  Tipo de entrega
+                                </h4>
+                                <select
+                                  value={order.delivery_method ?? ''}
+                                  onChange={(e) => updateOrderDeliveryMethod(order.id, (e.target.value || null) as DeliveryMethod | null)}
+                                  className="rounded-lg border border-surface-200 bg-white px-3 py-2 text-sm text-surface-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                >
+                                  {DELIVERY_METHOD_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                                   ))}
                                 </select>
                               </div>

@@ -29,11 +29,12 @@ interface ConversationCanvasProps {
 }
 
 const columns: { key: ConversationStatus; label: string; color: string; dotColor: string; dropHighlight: string }[] = [
-  { key: 'nuevo', label: 'Mensaje Nuevo', color: 'border-blue-200 bg-blue-50/50', dotColor: 'bg-blue-500', dropHighlight: 'ring-blue-300 bg-blue-50/80' },
-  { key: 'ai_attended', label: 'Atendido por IA', color: 'border-violet-200 bg-violet-50/50', dotColor: 'bg-violet-500', dropHighlight: 'ring-violet-300 bg-violet-50/80' },
-  { key: 'payment_pending', label: 'Pago Pendiente', color: 'border-warning-200 bg-warning-50/50', dotColor: 'bg-warning-500', dropHighlight: 'ring-amber-300 bg-amber-50/80' },
-  { key: 'immediate_attention', label: 'Atención Inmediata', color: 'border-danger-200 bg-danger-50/50', dotColor: 'bg-danger-500', dropHighlight: 'ring-red-300 bg-red-50/80' },
-  { key: 'closed', label: 'Cerrado', color: 'border-surface-200 bg-surface-50/50', dotColor: 'bg-surface-400', dropHighlight: 'ring-surface-300 bg-surface-100/80' },
+  { key: 'nuevo',              label: 'Mensaje Nuevo',    color: 'border-blue-200 bg-blue-50/50',     dotColor: 'bg-blue-500',     dropHighlight: 'ring-blue-300 bg-blue-50/80' },
+  { key: 'saludo_inicial',     label: 'Saludo Inicial',   color: 'border-sky-200 bg-sky-50/50',       dotColor: 'bg-sky-400',      dropHighlight: 'ring-sky-300 bg-sky-50/80' },
+  { key: 'cotizando',          label: 'Cotizando',        color: 'border-violet-200 bg-violet-50/50', dotColor: 'bg-violet-500',   dropHighlight: 'ring-violet-300 bg-violet-50/80' },
+  { key: 'payment_pending',    label: 'Pago Pendiente',   color: 'border-warning-200 bg-warning-50/50', dotColor: 'bg-warning-500', dropHighlight: 'ring-amber-300 bg-amber-50/80' },
+  { key: 'immediate_attention',label: 'Atención Inmediata', color: 'border-danger-200 bg-danger-50/50', dotColor: 'bg-danger-500', dropHighlight: 'ring-red-300 bg-red-50/80' },
+  { key: 'closed',             label: 'Cerrado',          color: 'border-surface-200 bg-surface-50/50', dotColor: 'bg-surface-400', dropHighlight: 'ring-surface-300 bg-surface-100/80' },
 ];
 
 const channelConfig: Record<ChannelType, { label: string; color: string }> = {
@@ -255,13 +256,18 @@ function ConversationCanvas({ conversations, onSelect, onStatusChange, onDelete 
   const grouped = useMemo(() => {
     const groups: Record<ConversationStatus, Conversation[]> = {
       nuevo: [],
-      ai_attended: [],
+      saludo_inicial: [],
+      cotizando: [],
+      ai_attended: [],       // legacy — not shown as a column
       payment_pending: [],
       immediate_attention: [],
       closed: [],
     };
     for (const c of conversations) {
-      if (groups[c.status]) {
+      if (c.status === 'ai_attended') {
+        // Legacy: map to saludo_inicial so cards remain visible
+        groups.saludo_inicial.push(c);
+      } else if (groups[c.status]) {
         groups[c.status].push(c);
       } else {
         groups.nuevo.push(c);

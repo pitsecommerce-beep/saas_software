@@ -8,7 +8,14 @@ import { ORDER_STATUSES } from '@/config/modules';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
-import type { Customer, OrderStatus, Profile } from '@/types';
+import type { Customer, OrderStatus, Profile, DeliveryMethod } from '@/types';
+import { DEFAULT_CUSTOMER_DISCOUNT } from '@/types';
+
+const DELIVERY_METHOD_OPTIONS: { value: DeliveryMethod; label: string }[] = [
+  { value: 'cliente_recoge', label: 'CLIENTE RECOGE' },
+  { value: 'envio_directo', label: 'ENVÍO DIRECTO' },
+  { value: 'envio_en_ruta', label: 'ENVÍO EN RUTA' },
+];
 
 interface CreateOrderModalProps {
   isOpen: boolean;
@@ -58,6 +65,7 @@ export function CreateOrderModal({
   const [customerSearch, setCustomerSearch] = useState('');
   const [chosenSellerId, setChosenSellerId] = useState<string>(sellerId);
   const [status, setStatus] = useState<OrderStatus>('cotizando');
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('cliente_recoge');
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<DraftItem[]>([emptyItem()]);
   const [loading, setLoading] = useState(false);
@@ -71,7 +79,7 @@ export function CreateOrderModal({
       const [customersRes, sellersRes] = await Promise.all([
         supabase
           .from('customers')
-          .select('id, team_id, name, email, phone, channel, channel_id, rfc, delivery_address, notes, assigned_to, created_at, updated_at')
+          .select('id, team_id, name, email, phone, channel, channel_id, rfc, delivery_address, discount_percentage, notes, assigned_to, created_at, updated_at')
           .eq('team_id', teamId)
           .order('name', { ascending: true }),
         supabase
@@ -97,6 +105,7 @@ export function CreateOrderModal({
       setCustomerSearch('');
       setChosenSellerId(sellerId);
       setStatus('cotizando');
+      setDeliveryMethod('cliente_recoge');
       setNotes('');
       setItems([emptyItem()]);
       setError(null);
@@ -160,6 +169,7 @@ export function CreateOrderModal({
           seller_id: chosenSellerId,
           status,
           total,
+          delivery_method: deliveryMethod,
           notes: notes.trim() || null,
         })
         .select('id')
@@ -247,8 +257,32 @@ export function CreateOrderModal({
           </div>
         </div>
 
-        {/* Seller + status */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Selected customer info (discount + address) */}
+        {customerId && (() => {
+          const selected = customers.find((c) => c.id === customerId);
+          if (!selected) return null;
+          const discount = selected.discount_percentage ?? DEFAULT_CUSTOMER_DISCOUNT;
+          return (
+            <div className="rounded-lg border border-surface-200 bg-surface-50 px-3 py-2.5 text-xs text-surface-600 space-y-1">
+              <p>
+                <span className="font-semibold text-surface-700">Descuento del cliente: </span>
+                <span className="inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                  {discount}%
+                </span>
+                <span className="ml-2 text-surface-500">(se aplica sobre el precio de lista)</span>
+              </p>
+              <p>
+                <span className="font-semibold text-surface-700">Dirección de envío: </span>
+                {selected.delivery_address
+                  ? <span className="text-surface-600">{selected.delivery_address}</span>
+                  : <span className="text-amber-600">Sin registrar — solicita la dirección al cliente antes de envíos directos o en ruta.</span>}
+              </p>
+            </div>
+          );
+        })()}
+
+        {/* Seller + status + delivery */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Select
             label="Vendedor"
             value={chosenSellerId}
@@ -260,6 +294,12 @@ export function CreateOrderModal({
             value={status}
             onChange={(e) => setStatus(e.target.value as OrderStatus)}
             options={ORDER_STATUSES.map((s) => ({ value: s.id, label: s.label }))}
+          />
+          <Select
+            label="Tipo de entrega"
+            value={deliveryMethod}
+            onChange={(e) => setDeliveryMethod(e.target.value as DeliveryMethod)}
+            options={DELIVERY_METHOD_OPTIONS}
           />
         </div>
 

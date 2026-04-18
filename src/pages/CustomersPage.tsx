@@ -130,6 +130,7 @@ export default function CustomersPage() {
     channel: ChannelType;
     rfc: string;
     delivery_address: string;
+    discount_percentage: number;
     notes: string;
   }) {
     if (!team?.id) return;
@@ -144,6 +145,7 @@ export default function CustomersPage() {
           channel: data.channel,
           rfc: data.rfc || undefined,
           delivery_address: data.delivery_address || undefined,
+          discount_percentage: data.discount_percentage,
           notes: data.notes || undefined,
         });
       } else {
@@ -155,6 +157,7 @@ export default function CustomersPage() {
           channel: data.channel,
           rfc: data.rfc || undefined,
           delivery_address: data.delivery_address || undefined,
+          discount_percentage: data.discount_percentage,
           notes: data.notes || undefined,
         });
       }

@@ -42,13 +42,13 @@ export interface AIResponse {
 
 const TOOL_DEFINITIONS: Record<string, { description: string; parameters: Record<string, unknown> }> = {
   crear_pedido: {
-    description: 'Crea un pedido para el cliente con los productos especificados. Solo usar después de que el cliente haya confirmado explícitamente que quiere proceder con la compra.',
+    description: 'Crea un pedido para el cliente con los productos especificados. Solo usar después de que el cliente haya confirmado explícitamente que quiere proceder con la compra. Debes incluir el tipo de entrega (CLIENTE RECOGE, ENVÍO DIRECTO o ENVÍO EN RUTA). Si el tipo de entrega requiere dirección y el cliente no la tiene registrada, primero usa actualizar_direccion_cliente.',
     parameters: {
       type: 'object',
       properties: {
         productos: {
           type: 'array',
-          description: 'Lista de productos a incluir en el pedido',
+          description: 'Lista de productos a incluir en el pedido. El precio se calcula automáticamente aplicando el descuento del cliente sobre el precio de lista.',
           items: {
             type: 'object',
             properties: {
@@ -59,9 +59,60 @@ const TOOL_DEFINITIONS: Record<string, { description: string; parameters: Record
             required: ['nombre', 'cantidad'],
           },
         },
+        metodo_entrega: {
+          type: 'string',
+          enum: ['cliente_recoge', 'envio_directo', 'envio_en_ruta'],
+          description: 'Tipo de entrega del pedido: cliente_recoge (CLIENTE RECOGE), envio_directo (ENVÍO DIRECTO) o envio_en_ruta (ENVÍO EN RUTA).',
+        },
         notas: { type: 'string', description: 'Notas adicionales del pedido' },
       },
-      required: ['productos'],
+      required: ['productos', 'metodo_entrega'],
+    },
+  },
+  consultar_cliente: {
+    description: 'Consulta los datos del cliente actual (descuento asignado y dirección de envío registrada) a partir de su número de celular. Usar al iniciar una conversación para saber si el cliente tiene descuento especial o si falta registrar su dirección.',
+    parameters: {
+      type: 'object',
+      properties: {
+        celular: {
+          type: 'string',
+          description: 'Número de celular del cliente (opcional, si no se proporciona se usa el celular del remitente).',
+        },
+      },
+    },
+  },
+  actualizar_descuento_cliente: {
+    description: 'Actualiza manualmente el porcentaje de descuento del cliente que se aplica sobre el precio de lista en sus compras. Solo usar cuando el gerente o vendedor autorizado pida cambiar el descuento. El default para clientes nuevos es 40%.',
+    parameters: {
+      type: 'object',
+      properties: {
+        porcentaje_descuento: {
+          type: 'number',
+          description: 'Nuevo porcentaje de descuento (0 a 100).',
+        },
+        celular: {
+          type: 'string',
+          description: 'Número de celular del cliente (opcional, por defecto el del remitente).',
+        },
+      },
+      required: ['porcentaje_descuento'],
+    },
+  },
+  actualizar_direccion_cliente: {
+    description: 'Guarda o actualiza la dirección de envío del cliente. Usar cuando el cliente no tiene dirección registrada y la proporciona, o cuando pide actualizar la dirección existente. Antes de actualizar una dirección existente, confirma con el cliente el cambio.',
+    parameters: {
+      type: 'object',
+      properties: {
+        direccion: {
+          type: 'string',
+          description: 'Dirección completa: calle, número, colonia, ciudad, estado y código postal.',
+        },
+        celular: {
+          type: 'string',
+          description: 'Número de celular del cliente (opcional, por defecto el del remitente).',
+        },
+      },
+      required: ['direccion'],
     },
   },
   consultar_disponibilidad: {
@@ -164,18 +215,42 @@ export function buildSystemPrompt(agentPrompt: string, knowledgeContext: string,
     prompt += `\n\n--- Instrucciones para Pedidos ---
 Tienes la capacidad de crear pedidos para los clientes. Sigue estas reglas:
 1. Cuando un cliente quiera comprar productos, busca los productos en la base de conocimiento para obtener precios y disponibilidad.
-2. Antes de crear el pedido, SIEMPRE muestra al cliente un resumen con los productos, cantidades, precios unitarios y el total.
-3. Pide confirmacion explicita del cliente (que diga "si", "confirmo", "dale", etc.) ANTES de ejecutar la herramienta crear_pedido.
-4. Si el cliente dice que si, usa la herramienta crear_pedido con la lista de productos.
-5. Si el cliente quiere modificar algo, ajusta la lista y vuelve a pedir confirmacion.
-6. Puedes usar la herramienta consultar_disponibilidad para verificar stock de productos especificos.
-7. Nunca inventes precios. Siempre usa los precios de la base de conocimiento.
+2. El cliente tiene un porcentaje de descuento asignado sobre el precio de lista (precio de venta). El descuento por defecto es 40%. Aplica SIEMPRE el descuento del cliente al calcular el precio unitario que le informas: precio_final = precio_lista * (1 - descuento/100). La herramienta crear_pedido hace este cálculo automáticamente.
+3. Antes de crear el pedido, SIEMPRE muestra al cliente un resumen con los productos, cantidades, precios unitarios ya con descuento y el total. Si el descuento no es el default (40%), menciónalo al cliente.
+4. SIEMPRE identifica el tipo de entrega antes de crear el pedido. Pregunta al cliente explícitamente si prefiere CLIENTE RECOGE, ENVÍO DIRECTO o ENVÍO EN RUTA.
+5. Si el tipo de entrega es ENVÍO DIRECTO o ENVÍO EN RUTA, el cliente DEBE tener una dirección registrada. Usa consultar_cliente al principio de la conversación para verificar si tiene dirección; si no la tiene, pídela y guárdala con actualizar_direccion_cliente. Si ya tiene una dirección, confírmala con el cliente y dale la opción de actualizarla.
+6. Pide confirmacion explicita del cliente (que diga "si", "confirmo", "dale", etc.) ANTES de ejecutar la herramienta crear_pedido.
+7. Si el cliente dice que si, usa la herramienta crear_pedido con la lista de productos y el metodo_entrega correcto.
+8. Si el cliente quiere modificar algo, ajusta la lista y vuelve a pedir confirmacion.
+9. Puedes usar la herramienta consultar_disponibilidad para verificar stock de productos especificos.
+10. Nunca inventes precios. Siempre usa los precios de la base de conocimiento y aplica el descuento del cliente.
 
 REGLA CRITICA ANTI-DUPLICADOS:
 - Una vez que crear_pedido devuelva un order_id exitoso, ese pedido QUEDA REGISTRADO. No lo crees de nuevo.
 - Si después el cliente dice "gracias", "listo", "ok", "perfecto", "todo bien" o cualquier expresión de cierre, NO ejecutes crear_pedido. Solo confirma que el pedido está registrado.
 - Solo ejecuta crear_pedido si el cliente pide productos NUEVOS y DIFERENTES a los del pedido existente.
 - Si el sistema devuelve blocked_duplicate=true, informa al cliente que su pedido ya está registrado y NO intentes crearlo de nuevo.`;
+  }
+
+  if (enabledTools?.includes('consultar_cliente')) {
+    prompt += `\n\n--- Instrucciones para identificación del cliente ---
+Al iniciar una conversación o cuando necesites saber datos del cliente, usa consultar_cliente con su celular (si no se proporciona, se usa el del remitente del mensaje).
+1. La respuesta incluye: nombre, descuento asignado (%) y dirección de envío registrada (si existe).
+2. Si el cliente NO tiene dirección registrada y el pedido requiere envío, solicítala antes de crear el pedido.
+3. Si el cliente SÍ tiene dirección registrada, confírmala textualmente con el cliente antes del envío y ofrécele la opción de actualizarla.
+4. Si el descuento del cliente NO es el default (40%), tenlo presente al calcular precios y menciónaselo cuando sea relevante.`;
+  }
+
+  if (enabledTools?.includes('actualizar_descuento_cliente')) {
+    prompt += `\n\n--- Instrucciones para descuento del cliente ---
+Solo cambia el descuento si el cliente (autorizado) o el vendedor lo pide explícitamente. Usa actualizar_descuento_cliente con el nuevo porcentaje (0 a 100). Confirma el nuevo descuento con el cliente después de actualizarlo.`;
+  }
+
+  if (enabledTools?.includes('actualizar_direccion_cliente')) {
+    prompt += `\n\n--- Instrucciones para dirección del cliente ---
+1. Cuando el cliente te dicte una nueva dirección, usa actualizar_direccion_cliente con la dirección completa (calle, número, colonia, ciudad, estado, CP).
+2. Antes de sobrescribir una dirección existente, confirma el cambio con el cliente.
+3. Después de guardar, confirma brevemente al cliente que su dirección quedó registrada.`;
   }
 
   if (enabledTools?.includes('consultar_pedido')) {

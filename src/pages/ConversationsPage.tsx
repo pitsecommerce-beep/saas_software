@@ -73,7 +73,7 @@ const mockConversations: Conversation[] = [
     },
     channel: 'whatsapp',
     channel_contact_id: '5213398765432',
-    status: 'ai_attended',
+    status: 'saludo_inicial',
     is_ai_enabled: false,
     last_message: 'Ya realice la transferencia, les envio el comprobante',
     last_message_at: minutesAgo(30),
