@@ -24,7 +24,7 @@ const CUSTOMER_TEMPLATE_COLUMNS = [
   { name: 'ES DISTRIBUIDOR', example: 'No' },
   { name: 'DIRECCIÓN', example: 'Av. Reforma 123, Col. Centro, CDMX' },
   { name: 'CELULAR', example: '+52 55 1234 5678' },
-  { name: 'CORREO ELECTRÓNICO', example: 'juan.perez@negocio.com' },
+  { name: 'CORREOELECTRÓNICO', example: 'juan.perez@negocio.com' },
   { name: 'CANAL ORIGEN', example: 'Instagram' },
   { name: 'USUARIO INSTA / MESSENGER', example: '@juanperez_refacciones' },
   { name: 'NOTAS', example: 'Cliente frecuente, prefiere pago en efectivo' },
