@@ -309,8 +309,7 @@ export async function getAIResponse(
 export async function continueWithToolResults(
   agent: AIAgent,
   systemPrompt: string,
-  providerMessages: unknown[],
-  _toolResults: { toolCallId: string; result: string }[]
+  providerMessages: unknown[]
 ): Promise<AIResponse | null> {
   try {
     switch (agent.provider) {
