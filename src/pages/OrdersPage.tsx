@@ -537,13 +537,13 @@ function OrdersPage() {
       ) : (
         <div className="overflow-hidden rounded-2xl border border-surface-200 bg-white">
           {/* Header */}
-          <div className="hidden sm:grid grid-cols-[1fr_1.5fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 bg-surface-50 border-b border-surface-200 text-xs font-medium text-surface-500 uppercase tracking-wider">
+          <div className="hidden sm:grid grid-cols-[120px_1.5fr_100px_200px_120px_180px] gap-4 px-5 py-3 bg-surface-50 border-b border-surface-200 text-xs font-medium text-surface-500 uppercase tracking-wider">
             <span>ID</span>
             <span>Cliente</span>
             <span>Canal</span>
             <span>Estado</span>
-            <span>Total</span>
-            <span>Fecha</span>
+            <span className="text-right">Total</span>
+            <span className="text-right">Fecha</span>
           </div>
 
           {/* Rows */}
@@ -559,19 +559,19 @@ function OrdersPage() {
                   {/* Row */}
                   <button
                     onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
-                    className="w-full text-left grid grid-cols-1 sm:grid-cols-[1fr_1.5fr_1fr_1fr_1fr_auto] gap-2 sm:gap-4 px-5 py-3.5 hover:bg-surface-50 transition-colors"
+                    className="w-full text-left grid grid-cols-1 sm:grid-cols-[120px_1.5fr_100px_200px_120px_180px] gap-2 sm:gap-4 px-5 py-3.5 hover:bg-surface-50 transition-colors"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <Package className="h-4 w-4 text-surface-400 shrink-0" />
-                      <span className="text-sm font-mono text-surface-600">
+                      <span className="text-sm font-mono text-surface-600 truncate">
                         #{order.id.slice(0, 8)}
                       </span>
                     </div>
-                    <span className="text-sm font-medium text-surface-800 truncate">
+                    <span className="text-sm font-medium text-surface-800 truncate min-w-0">
                       {customerName}
                     </span>
-                    <span className="text-sm text-surface-600">{channelLabel}</span>
-                    <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-sm text-surface-600 truncate min-w-0">{channelLabel}</span>
+                    <div className="flex flex-wrap items-center gap-1 min-w-0">
                       <Badge size="sm" className={getStatusColor(order.status)}>
                         {getStatusLabel(order.status)}
                       </Badge>
@@ -581,17 +581,17 @@ function OrdersPage() {
                         </Badge>
                       )}
                     </div>
-                    <span className="text-sm font-semibold text-surface-800">
+                    <span className="text-sm font-semibold text-surface-800 text-right truncate min-w-0">
                       {formatCurrency(order.total)}
                     </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-surface-500">
+                    <div className="flex items-center justify-end gap-2 min-w-0">
+                      <span className="text-xs text-surface-500 truncate">
                         {formatDate(order.created_at)}
                       </span>
                       {isExpanded ? (
-                        <ChevronUp className="h-4 w-4 text-surface-400" />
+                        <ChevronUp className="h-4 w-4 text-surface-400 shrink-0" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-surface-400" />
+                        <ChevronDown className="h-4 w-4 text-surface-400 shrink-0" />
                       )}
                     </div>
                   </button>

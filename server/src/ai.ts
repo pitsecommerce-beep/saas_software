@@ -303,21 +303,23 @@ export async function getAIResponse(
   }
 }
 
-// Continue a conversation after tool results
+// Continue a conversation after tool results.
+// providerMessages must ALREADY contain the assistant turn (with tool_use/tool_calls)
+// and the tool_result turn appended by the caller.
 export async function continueWithToolResults(
   agent: AIAgent,
   systemPrompt: string,
   providerMessages: unknown[],
-  toolResults: { toolCallId: string; result: string }[]
+  _toolResults: { toolCallId: string; result: string }[]
 ): Promise<AIResponse | null> {
   try {
     switch (agent.provider) {
       case 'openai':
-        return await continueOpenAI(agent.api_key_encrypted, agent.model, systemPrompt, providerMessages as OpenAI.Chat.Completions.ChatCompletionMessageParam[], toolResults, agent.enabled_tools);
+        return await continueOpenAI(agent.api_key_encrypted, agent.model, systemPrompt, providerMessages as OpenAI.Chat.Completions.ChatCompletionMessageParam[], agent.enabled_tools);
       case 'anthropic':
-        return await continueAnthropic(agent.api_key_encrypted, agent.model, systemPrompt, providerMessages as Anthropic.MessageParam[], toolResults, agent.enabled_tools);
+        return await continueAnthropic(agent.api_key_encrypted, agent.model, systemPrompt, providerMessages as Anthropic.MessageParam[], agent.enabled_tools);
       case 'google':
-        return await continueGoogle(agent.api_key_encrypted, agent.model, systemPrompt, providerMessages as Record<string, unknown>[], toolResults, agent.enabled_tools);
+        return await continueGoogle(agent.api_key_encrypted, agent.model, systemPrompt, providerMessages as Record<string, unknown>[], agent.enabled_tools);
       default:
         return null;
     }
@@ -379,21 +381,16 @@ async function continueOpenAI(
   model: string,
   systemPrompt: string,
   previousMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-  toolResults: { toolCallId: string; result: string }[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
   const client = new OpenAI({ apiKey });
   const tools = buildOpenAITools(enabledTools);
 
-  // Add tool results as tool messages
+  // previousMessages already contains the assistant turn with tool_calls
+  // and the subsequent tool-role messages with their results.
   const allMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
     ...previousMessages,
-    ...toolResults.map((tr) => ({
-      role: 'tool' as const,
-      tool_call_id: tr.toolCallId,
-      content: tr.result,
-    })),
   ];
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
@@ -465,28 +462,17 @@ async function continueAnthropic(
   model: string,
   systemPrompt: string,
   previousMessages: Anthropic.MessageParam[],
-  toolResults: { toolCallId: string; result: string }[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
   const client = new Anthropic({ apiKey });
   const tools = buildAnthropicTools(enabledTools);
 
-  // Anthropic expects tool_result blocks in the user turn
-  const toolResultContent: Anthropic.ToolResultBlockParam[] = toolResults.map((tr) => ({
-    type: 'tool_result',
-    tool_use_id: tr.toolCallId,
-    content: tr.result,
-  }));
-
-  const allMessages: Anthropic.MessageParam[] = [
-    ...previousMessages,
-    { role: 'user', content: toolResultContent },
-  ];
-
+  // previousMessages already contains the assistant turn with tool_use blocks
+  // and the user turn with the matching tool_result blocks.
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model,
     system: systemPrompt,
-    messages: allMessages,
+    messages: previousMessages,
     max_tokens: 500,
   };
   if (tools.length > 0) params.tools = tools;
@@ -570,27 +556,15 @@ async function continueGoogle(
   model: string,
   systemPrompt: string,
   previousContents: Record<string, unknown>[],
-  toolResults: { toolCallId: string; result: string }[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
   const tools = buildGoogleTools(enabledTools);
 
-  // Google expects functionResponse parts
-  const functionResponses = toolResults.map((tr) => ({
-    functionResponse: {
-      name: tr.toolCallId, // For Google, we use the function name stored in toolCallId
-      response: { result: tr.result },
-    },
-  }));
-
-  const contents = [
-    ...previousContents,
-    { role: 'user', parts: functionResponses },
-  ];
-
+  // previousContents already contains the model turn with functionCall parts
+  // and the user turn with the matching functionResponse parts.
   const body: Record<string, unknown> = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents,
+    contents: previousContents,
     generationConfig: { maxOutputTokens: 500, temperature: 0.7 },
   };
   if (tools.length > 0) body.tools = tools;
