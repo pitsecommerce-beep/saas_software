@@ -513,8 +513,7 @@ async function processAIResponse(
     const nextResponse = await continueWithToolResults(
       agent,
       systemPrompt,
-      providerMessages,
-      toolResults
+      providerMessages
     );
 
     if (!nextResponse) {
