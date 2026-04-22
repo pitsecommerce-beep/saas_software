@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { supabase, isConfigured } from './supabase';
 import { getAIResponse, continueWithToolResults, buildSystemPrompt } from './ai';
 import type { AIResponse, AIResponsePart } from './ai';
+import { transcribeAudio } from './transcription';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -15,6 +16,7 @@ interface YCloudMessage {
   from: string;
   to: string;
   text?: { body: string };
+  audio?: { id?: string; link?: string; mime_type?: string };
   timestamp?: string;
 }
 
@@ -83,7 +85,31 @@ export async function handleYCloudWebhook(req: Request, res: Response): Promise<
 async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   const senderPhone = msg.from;
   const recipientPhone = msg.to;
-  const messageText = msg.text?.body;
+  let messageText = msg.text?.body;
+
+  if (!messageText && msg.type === 'audio' && msg.audio) {
+    console.log(`[Audio] Nota de voz recibida de ${senderPhone}, transcribiendo...`);
+    const transcribed = await transcribeAudio(msg.audio, recipientPhone);
+    if (!transcribed) {
+      // Notificar al usuario que no se pudo procesar
+      const apiKey = process.env.YCLOUD_API_KEY;
+      if (apiKey) {
+        await fetch('https://api.ycloud.com/v2/whatsapp/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+          body: JSON.stringify({
+            from: recipientPhone,
+            to: senderPhone,
+            type: 'text',
+            text: { body: 'No pude procesar tu nota de voz. Por favor escribe tu mensaje.' }
+          })
+        });
+      }
+      return;
+    }
+    messageText = transcribed;
+    console.log(`[Audio] Transcripción: "${messageText}"`);
+  }
 
   if (!messageText) {
     console.log('Received non-text message, skipping');
@@ -188,7 +214,12 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     conversation_id: conversation.id,
     sender_type: 'customer',
     content: messageText,
-    metadata: { ycloud_message_id: msg.id, phone: senderPhone },
+    metadata: {
+      ycloud_message_id: msg.id,
+      phone: senderPhone,
+      original_type: msg.type,
+      was_voice_note: msg.type === 'audio',
+    },
   });
 
   await supabase
