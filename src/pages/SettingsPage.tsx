@@ -117,7 +117,6 @@ const TABS: { id: TabId; label: string; icon: typeof Bot; managerOnly?: boolean 
   { id: 'agents', label: 'Agentes de IA', icon: Bot },
   { id: 'channels', label: 'Canales', icon: MessageCircle },
   { id: 'connector', label: 'Conexiones', icon: Network },
-  { id: 'ycloud', label: 'yCloud', icon: Zap },
   { id: 'payments', label: 'Pagos', icon: CreditCard },
   { id: 'general', label: 'General', icon: Settings },
   { id: 'credits', label: 'Harmony Credits', icon: Coins, managerOnly: true },
