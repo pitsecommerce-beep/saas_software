@@ -34,6 +34,7 @@ export interface AIResponsePart {
 export interface AIResponse {
   parts: AIResponsePart[];
   hasToolCalls: boolean;
+  tokenUsage?: { inputTokens: number; outputTokens: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +373,11 @@ async function callOpenAI(
     }
   }
 
-  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call') };
+  const tokenUsage = response.usage
+    ? { inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens }
+    : undefined;
+
+  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call'), tokenUsage };
 }
 
 async function continueOpenAI(
@@ -419,7 +424,11 @@ async function continueOpenAI(
     }
   }
 
-  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call') };
+  const tokenUsage = response.usage
+    ? { inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens }
+    : undefined;
+
+  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call'), tokenUsage };
 }
 
 // ---------------------------------------------------------------------------
@@ -494,7 +503,10 @@ function parseAnthropicResponse(response: Anthropic.Message): AIResponse {
       });
     }
   }
-  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call') };
+  const tokenUsage = response.usage
+    ? { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
+    : undefined;
+  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call'), tokenUsage };
 }
 
 // ---------------------------------------------------------------------------
@@ -536,17 +548,7 @@ async function callGoogle(
     throw new Error(`Gemini API error (${response.status}): ${errorBody}`);
   }
 
-  const data = await response.json() as {
-    candidates?: {
-      content?: {
-        parts?: Array<{
-          text?: string;
-          functionCall?: { name: string; args: Record<string, unknown> };
-        }>;
-      };
-    }[];
-  };
-
+  const data = await response.json() as GoogleApiResponse;
   return parseGoogleResponse(data);
 }
 
@@ -582,20 +584,11 @@ async function continueGoogle(
     throw new Error(`Gemini continue error (${response.status}): ${errorBody}`);
   }
 
-  const data = await response.json() as {
-    candidates?: {
-      content?: {
-        parts?: Array<{
-          text?: string;
-          functionCall?: { name: string; args: Record<string, unknown> };
-        }>;
-      };
-    }[];
-  };
+  const data = await response.json() as GoogleApiResponse;
   return parseGoogleResponse(data);
 }
 
-function parseGoogleResponse(data: {
+interface GoogleApiResponse {
   candidates?: {
     content?: {
       parts?: Array<{
@@ -604,7 +597,14 @@ function parseGoogleResponse(data: {
       }>;
     };
   }[];
-}): AIResponse {
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+}
+
+function parseGoogleResponse(data: GoogleApiResponse): AIResponse {
   const parts: AIResponsePart[] = [];
   const candidateParts = data.candidates?.[0]?.content?.parts ?? [];
 
@@ -617,10 +617,17 @@ function parseGoogleResponse(data: {
         type: 'tool_call',
         toolName: part.functionCall.name,
         toolArgs: part.functionCall.args,
-        toolCallId: part.functionCall.name, // Google uses function name as ID
+        toolCallId: part.functionCall.name,
       });
     }
   }
 
-  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call') };
+  const tokenUsage = data.usageMetadata
+    ? {
+        inputTokens: data.usageMetadata.promptTokenCount ?? 0,
+        outputTokens: data.usageMetadata.candidatesTokenCount ?? 0,
+      }
+    : undefined;
+
+  return { parts, hasToolCalls: parts.some((p) => p.type === 'tool_call'), tokenUsage };
 }

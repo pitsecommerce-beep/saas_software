@@ -295,7 +295,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   }
 
   // Process the response — handle tool call loop
-  const finalText = await processAIResponse(
+  const aiResult = await processAIResponse(
     aiResponse,
     agent,
     contextForAI,
@@ -306,6 +306,25 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     conversation.id,
     currentDateTime
   );
+
+  const finalText = aiResult.text;
+
+  // Registrar consumo de tokens (datos independientes de las conversaciones)
+  if (aiResult.inputTokens > 0 || aiResult.outputTokens > 0) {
+    supabase.from('token_usage').insert({
+      team_id: teamId,
+      agent_id: agent.id,
+      agent_name: agent.name,
+      provider: agent.provider,
+      model: agent.model,
+      input_tokens: aiResult.inputTokens,
+      output_tokens: aiResult.outputTokens,
+      conversation_id: conversation.id,
+    }).then(({ error }) => {
+      if (error) console.error('[Tokens] Error saving token_usage:', error.message);
+      else console.log(`[Tokens] Saved: ${aiResult.inputTokens} in + ${aiResult.outputTokens} out (${agent.provider}/${agent.model})`);
+    });
+  }
 
   if (!finalText) {
     console.warn('No final text after processing AI response');
@@ -377,6 +396,12 @@ function sanitizeMessageHistory(
 // Process AI response with tool call loop
 // ---------------------------------------------------------------------------
 
+interface AIProcessResult {
+  text: string | null;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 async function processAIResponse(
   response: AIResponse,
   agent: AIAgent,
@@ -387,10 +412,14 @@ async function processAIResponse(
   customerPhone: string,
   conversationId: string,
   currentDateTime?: string
-): Promise<string | null> {
+): Promise<AIProcessResult> {
+  // Acumula tokens de todas las llamadas IA en este turno de conversación
+  let totalInputTokens = response.tokenUsage?.inputTokens ?? 0;
+  let totalOutputTokens = response.tokenUsage?.outputTokens ?? 0;
+
   // If no tool calls, just return the text
   if (!response.hasToolCalls) {
-    return getTextFromParts(response.parts);
+    return { text: getTextFromParts(response.parts), inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
   }
 
   const systemPrompt = buildSystemPrompt(agent.system_prompt, knowledgeContext, agent.enabled_tools, currentDateTime);
@@ -548,15 +577,20 @@ async function processAIResponse(
     );
 
     if (!nextResponse) {
-      // If continuation fails, return whatever text we have so far
       const partialText = getTextFromParts(currentResponse.parts);
-      return partialText || 'Lo siento, hubo un error procesando tu solicitud. Por favor intenta de nuevo.';
+      return {
+        text: partialText || 'Lo siento, hubo un error procesando tu solicitud. Por favor intenta de nuevo.',
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      };
     }
 
+    totalInputTokens += nextResponse.tokenUsage?.inputTokens ?? 0;
+    totalOutputTokens += nextResponse.tokenUsage?.outputTokens ?? 0;
     currentResponse = nextResponse;
   }
 
-  return getTextFromParts(currentResponse.parts);
+  return { text: getTextFromParts(currentResponse.parts), inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
 }
 
 function getTextFromParts(parts: AIResponsePart[]): string | null {

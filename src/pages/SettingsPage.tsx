@@ -19,6 +19,7 @@ import {
   Palette,
   Upload,
   X,
+  Coins,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AIAgent, ChannelAssignment, ChannelType } from '@/types';
@@ -33,6 +34,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { AIAgentConfig } from '@/components/settings/AIAgentConfig';
 import { ChannelConfig } from '@/components/settings/ChannelConfig';
 import { ChannelAgentConnector } from '@/components/settings/ChannelAgentConnector';
+import { HarmonyCredits } from '@/components/settings/HarmonyCredits';
 import { cn } from '@/lib/utils';
 import { useDemoStore } from '@/stores/demoStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -109,15 +111,16 @@ const MOCK_ASSIGNMENTS: ChannelAssignment[] = [
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabId = 'agents' | 'channels' | 'connector' | 'ycloud' | 'payments' | 'general';
+type TabId = 'agents' | 'channels' | 'connector' | 'ycloud' | 'payments' | 'general' | 'credits';
 
-const TABS: { id: TabId; label: string; icon: typeof Bot }[] = [
+const TABS: { id: TabId; label: string; icon: typeof Bot; managerOnly?: boolean }[] = [
   { id: 'agents', label: 'Agentes de IA', icon: Bot },
   { id: 'channels', label: 'Canales', icon: MessageCircle },
   { id: 'connector', label: 'Conexiones', icon: Network },
   { id: 'ycloud', label: 'yCloud', icon: Zap },
   { id: 'payments', label: 'Pagos', icon: CreditCard },
   { id: 'general', label: 'General', icon: Settings },
+  { id: 'credits', label: 'Harmony Credits', icon: Coins, managerOnly: true },
 ];
 
 // ---------------------------------------------------------------------------
@@ -563,7 +566,7 @@ function SettingsPage() {
 
         {/* Tab navigation */}
         <div className="flex gap-1 rounded-xl bg-surface-100 p-1 overflow-x-auto">
-          {TABS.map((tab) => {
+          {TABS.filter((t) => !t.managerOnly || isManager).map((tab) => {
             const TabIcon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -574,7 +577,8 @@ function SettingsPage() {
                   'relative flex items-center gap-2 px-3 py-2.5 text-sm font-medium rounded-lg flex-shrink-0 flex-1 justify-center transition-colors duration-200 min-w-0',
                   isActive
                     ? 'text-surface-900'
-                    : 'text-surface-500 hover:text-surface-700'
+                    : 'text-surface-500 hover:text-surface-700',
+                  tab.id === 'credits' && 'text-primary-600'
                 )}
               >
                 {isActive && (
@@ -1349,6 +1353,11 @@ function SettingsPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* ---- Harmony Credits Tab (gerente only) ---- */}
+            {activeTab === 'credits' && isManager && (
+              <HarmonyCredits />
             )}
           </motion.div>
         </AnimatePresence>
