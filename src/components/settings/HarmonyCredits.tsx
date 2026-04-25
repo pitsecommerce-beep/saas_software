@@ -101,22 +101,26 @@ interface MetricCardProps {
 }
 
 function MetricCard({ icon, label, value, sub, gradient, delay = 0 }: MetricCardProps) {
+  const valueSize =
+    value.length > 10 ? 'text-lg' :
+    value.length > 7  ? 'text-xl' :
+                        'text-2xl';
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay }}
     >
-      <Card className="relative overflow-hidden">
+      <Card className="relative overflow-hidden h-full">
         {/* Fondo decorativo */}
         <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-[0.04] pointer-events-none`} />
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-3">
           <div className={`flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br ${gradient} shrink-0`}>
             <span className="text-white">{icon}</span>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-surface-500 uppercase tracking-wide">{label}</p>
-            <p className="text-2xl font-bold text-surface-900 mt-0.5 leading-tight">{value}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-surface-500 uppercase tracking-wide leading-tight">{label}</p>
+            <p className={`${valueSize} font-bold text-surface-900 mt-0.5 leading-tight break-all`}>{value}</p>
             {sub && <p className="text-xs text-surface-400 mt-1">{sub}</p>}
           </div>
         </div>
