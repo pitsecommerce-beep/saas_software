@@ -260,6 +260,45 @@ Railway se usa para el backend que maneja webhooks de YCloud y procesa mensajes 
 6. Code splitting para reducir bundle size
 7. Almacenar datos del Excel cargado en la tabla `knowledge_bases` como JSON o en Storage de Supabase para consulta por la IA
 
+## Sistema Harmony Credits (abril 2026)
+
+### Objetivo
+Registro automático del consumo de tokens de IA por equipo, con panel exclusivo para el gerente que muestra métricas en tiempo real y saldo disponible ("Harmony Credits").
+
+### Tablas nuevas en Supabase
+- **`token_usage`**: Registro acumulativo e independiente de conversaciones. Cada llamada al API de IA genera una fila con `team_id`, `agent_id`, `provider`, `model`, `input_tokens`, `output_tokens`, `conversation_id` (nullable), `created_at`.
+- **`harmony_credits`**: Una fila por equipo con `balance_usd` (saldo actual), `total_recharged_usd` (acumulado histórico), `updated_at`, `updated_by`. El admin recarga desde otra plataforma usando el service role key.
+
+### Captura automática de tokens
+- `server/src/ai.ts`: Los tres proveedores (OpenAI, Anthropic, Google) ahora incluyen `tokenUsage: { inputTokens, outputTokens }` en `AIResponse`.
+- `server/src/webhook.ts`: Después de cada respuesta IA (incluyendo iteraciones de tool calling), se suman todos los tokens y se inserta una fila en `token_usage`.
+- Los datos **no se borran** aunque se eliminen conversaciones (referencia `conversation_id` es nullable/soft).
+
+### Cálculo de costos
+- `src/lib/modelPricing.ts`: Tabla de precios por modelo (USD/1M tokens) para OpenAI, Anthropic y Google. La función `calculateCostUsd(model, inputTokens, outputTokens)` devuelve el costo en USD.
+
+### UI del gerente (Settings → Harmony Credits)
+- Tab exclusivo visible solo para usuarios con rol `gerente`.
+- Componente `src/components/settings/HarmonyCredits.tsx` con:
+  - Gauge circular de saldo restante (% del total recargado)
+  - Saldo en USD actual
+  - KPIs: tokens totales, media por conversación, conversaciones restantes, costo total
+  - Gráfica de barras por agente con porcentaje del gasto total
+  - Nota informativa sobre la persistencia de datos
+- El tab filtra con `managerOnly: true` en la definición de TABS.
+
+### Recarga de créditos (admin)
+- El admin usa la service role key de Supabase para hacer UPSERT en `harmony_credits`:
+  ```sql
+  INSERT INTO harmony_credits (team_id, balance_usd, total_recharged_usd, updated_by)
+  VALUES ('{team_id}', {amount}, {amount}, 'admin')
+  ON CONFLICT (team_id) DO UPDATE SET
+    balance_usd = harmony_credits.balance_usd + EXCLUDED.balance_usd,
+    total_recharged_usd = harmony_credits.total_recharged_usd + EXCLUDED.balance_usd,
+    updated_at = now(),
+    updated_by = EXCLUDED.updated_by;
+  ```
+
 ## Optimizaciones abril 2026
 
 1. **`isSupabaseConfigured` extraído a `src/lib/config.ts`** — Se eliminó la declaración duplicada en `authStore.ts`, `ConversationsPage.tsx`, `DashboardPage.tsx`, `KnowledgeBasesPage.tsx` y `SettingsPage.tsx`. Todos ahora importan desde `@/lib/config`.
