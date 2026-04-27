@@ -24,21 +24,14 @@ function SplashScreen() {
       />
 
       <div className="relative z-10 flex flex-col items-center gap-8">
-        {/* Logo mark */}
+        {/* Logo */}
         <motion.div
           initial={{ scale: 0.6, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
           className="relative"
         >
-          <div className="w-20 h-20 rounded-3xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-2xl">
-            <svg viewBox="0 0 32 32" className="w-10 h-10 text-white" fill="currentColor">
-              <path d="M16 3C9.373 3 4 8.373 4 15c0 3.52 1.435 6.706 3.75 9.008L6.5 29l5.25-1.5C13.137 28.16 14.552 28.5 16 28.5c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 22c-1.287 0-2.54-.236-3.695-.665l-.265-.1-2.74.782.797-2.67-.173-.275C8.075 20.5 7 17.854 7 15c0-4.963 4.037-9 9-9s9 4.037 9 9-4.037 9-9 9z"/>
-              <circle cx="11" cy="15" r="1.5"/>
-              <circle cx="16" cy="15" r="1.5"/>
-              <circle cx="21" cy="15" r="1.5"/>
-            </svg>
-          </div>
+          <img src="/logo.png" alt="Logo" className="h-20 w-auto object-contain" />
           {/* Ripple rings */}
           {[1, 2, 3].map((i) => (
             <motion.div
@@ -54,16 +47,6 @@ function SplashScreen() {
               }}
             />
           ))}
-        </motion.div>
-
-        {/* Brand name */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="text-center"
-        >
-          <h1 className="text-4xl font-bold text-white tracking-tight">Orkesta</h1>
         </motion.div>
 
         {/* Dot loader */}

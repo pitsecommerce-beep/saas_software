@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Zap } from 'lucide-react';
+import { Mail, Lock } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { GoogleIcon } from '@/components/ui/GoogleIcon';
@@ -81,11 +81,8 @@ export default function LoginPage() {
             transition={{ delay: 0.3, duration: 0.5 }}
             className="text-center"
           >
-            <div className="inline-flex items-center gap-3 mb-6">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
-                <Zap className="h-8 w-8 text-white" />
-              </div>
-              <h1 className="text-5xl font-bold tracking-tight">Orkesta</h1>
+            <div className="mb-6">
+              <img src="/logo.png" alt="Logo" className="h-16 w-auto object-contain" />
             </div>
             <p className="text-xl text-primary-100 font-medium mb-2">
               Tu asistente de ventas inteligente
@@ -125,12 +122,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md space-y-8">
           {/* Mobile brand header */}
           <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center gap-2 mb-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-500">
-                <Zap className="h-5 w-5 text-white" />
-              </div>
-              <span className="text-3xl font-bold text-surface-900">Orkesta</span>
-            </div>
+            <img src="/logo.png" alt="Logo" className="h-10 w-auto object-contain mx-auto" />
           </div>
 
           <div>
