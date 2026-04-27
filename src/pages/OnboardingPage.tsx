@@ -11,7 +11,6 @@ import {
   Copy,
   ArrowRight,
   ArrowLeft,
-  Zap,
   PartyPopper,
   X,
   Hash,
@@ -166,10 +165,7 @@ function GoogleIntentChooser({ onChoose }: { onChoose: (v: OAuthIntent) => void 
     <div className="min-h-screen bg-surface-50 flex flex-col">
       <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-surface-100">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
-            <Zap className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold text-surface-900">Orkesta</span>
+          <img src="/logo.png" alt="Logo" className="h-9 w-auto object-contain" />
         </div>
         <button
           type="button"
@@ -194,7 +190,7 @@ function GoogleIntentChooser({ onChoose }: { onChoose: (v: OAuthIntent) => void 
               ¿Qué quieres hacer?
             </h2>
             <p className="mt-2 text-surface-500">
-              Elige cómo quieres empezar en Orkesta
+              Elige cómo quieres empezar en Beep
             </p>
           </div>
 
@@ -300,10 +296,7 @@ function VendedorJoinTeam({
     <div className="min-h-screen bg-surface-50 flex flex-col">
       <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-surface-100">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
-            <Zap className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold text-surface-900">Orkesta</span>
+          <img src="/logo.png" alt="Logo" className="h-9 w-auto object-contain" />
         </div>
         <button
           type="button"
@@ -651,10 +644,7 @@ function OnboardingWizard() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-surface-100">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
-            <Zap className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold text-surface-900">Orkesta</span>
+          <img src="/logo.png" alt="Logo" className="h-9 w-auto object-contain" />
         </div>
         <div className="flex items-center gap-4">
           <p className="text-sm text-surface-400">

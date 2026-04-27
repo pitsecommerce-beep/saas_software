@@ -375,7 +375,7 @@ export default function CustomersPage() {
               La plantilla incluye las columnas necesarias: nombre, correo electrónico, teléfono, canal, RFC, dirección de entrega, descuento (%) y notas.
             </p>
             <TemplateDownloader
-              templateName="Plantilla_Clientes_Orkesta"
+              templateName="Plantilla_Clientes_Beep"
               columns={CUSTOMER_TEMPLATE_COLUMNS}
             />
           </div>

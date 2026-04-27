@@ -64,7 +64,6 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showProfilePanel, setShowProfilePanel] = useState(false);
   const { appName, logoUrl } = useBrandingStore();
-  const brandInitial = appName.trim().charAt(0).toUpperCase() || 'O';
 
   return (
     <>
@@ -97,29 +96,36 @@ export function Sidebar({ profile, onLogout, isOpen, onClose }: SidebarProps) {
         <div className="flex h-16 items-center justify-between border-b border-surface-200 px-4">
           <div className="flex items-center gap-2 overflow-hidden">
             {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt={appName}
-                className="h-9 w-9 shrink-0 rounded-lg object-cover"
-              />
+              <>
+                <img
+                  src={logoUrl}
+                  alt={appName}
+                  className="h-9 w-9 shrink-0 rounded-lg object-cover"
+                />
+                <AnimatePresence>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden whitespace-nowrap text-lg font-bold text-surface-900"
+                    >
+                      {appName}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </>
             ) : (
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">
-                {brandInitial}
-              </div>
+              <img
+                src="/logo.png"
+                alt="Logo"
+                className={cn(
+                  'shrink-0 object-contain transition-all duration-300',
+                  collapsed ? 'h-9 w-9' : 'h-9 w-auto max-w-[144px]',
+                )}
+              />
             )}
-            <AnimatePresence>
-              {!collapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden whitespace-nowrap text-lg font-bold text-surface-900"
-                >
-                  {appName}
-                </motion.span>
-              )}
-            </AnimatePresence>
           </div>
 
           {/* Close button on mobile */}

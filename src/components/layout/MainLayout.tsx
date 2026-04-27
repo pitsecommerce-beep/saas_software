@@ -39,11 +39,10 @@ export function MainLayout() {
     if (!link) return;
     if (faviconUrl) {
       link.href = faviconUrl;
-      // Let the browser infer type from the data URL / remote URL
       link.removeAttribute('type');
     } else {
-      link.href = '/favicon.svg';
-      link.type = 'image/svg+xml';
+      link.href = '/favicon.png';
+      link.type = 'image/png';
     }
   }, [faviconUrl]);
   const isFullHeight = useMemo(
