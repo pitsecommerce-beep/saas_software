@@ -190,7 +190,7 @@ function GoogleIntentChooser({ onChoose }: { onChoose: (v: OAuthIntent) => void 
               ¿Qué quieres hacer?
             </h2>
             <p className="mt-2 text-surface-500">
-              Elige cómo quieres empezar en Beep
+              Elige cómo quieres empezar en Orkesta
             </p>
           </div>
 

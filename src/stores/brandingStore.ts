@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export const DEFAULT_APP_NAME = 'Beep';
+export const DEFAULT_APP_NAME = 'Orkesta';
 export const DEFAULT_APP_TAGLINE = 'Tu asistente de ventas inteligente';
 
 interface BrandingState {
