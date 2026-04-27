@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
+import { decrypt } from './crypto';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -340,7 +341,7 @@ async function callOpenAI(
   messages: { role: 'user' | 'assistant'; content: string }[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey: decrypt(apiKey) });
   const tools = buildOpenAITools(enabledTools);
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
@@ -387,7 +388,7 @@ async function continueOpenAI(
   previousMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey: decrypt(apiKey) });
   const tools = buildOpenAITools(enabledTools);
 
   // previousMessages already contains the assistant turn with tool_calls
@@ -442,7 +443,7 @@ async function callAnthropic(
   messages: { role: 'user' | 'assistant'; content: string }[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey: decrypt(apiKey) });
   const tools = buildAnthropicTools(enabledTools);
 
   // Validate messages before calling the API
@@ -472,7 +473,7 @@ async function continueAnthropic(
   previousMessages: Anthropic.MessageParam[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey: decrypt(apiKey) });
   const tools = buildAnthropicTools(enabledTools);
 
   // previousMessages already contains the assistant turn with tool_use blocks
@@ -520,6 +521,7 @@ async function callGoogle(
   messages: { role: 'user' | 'assistant'; content: string }[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
+  const decryptedApiKey = decrypt(apiKey);
   const contents = messages.map((m) => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }],
@@ -535,7 +537,7 @@ async function callGoogle(
   if (tools.length > 0) body.tools = tools;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${decryptedApiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -559,6 +561,7 @@ async function continueGoogle(
   previousContents: Record<string, unknown>[],
   enabledTools?: string[]
 ): Promise<AIResponse | null> {
+  const decryptedApiKey = decrypt(apiKey);
   const tools = buildGoogleTools(enabledTools);
 
   // previousContents already contains the model turn with functionCall parts
@@ -571,7 +574,7 @@ async function continueGoogle(
   if (tools.length > 0) body.tools = tools;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${decryptedApiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

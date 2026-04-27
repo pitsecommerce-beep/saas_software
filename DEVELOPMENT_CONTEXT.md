@@ -180,6 +180,12 @@ YCLOUD_WEBHOOK_SECRET      - ⚠️ DEJAR EN BLANCO (vacío). La validación de 
                              puede causar que los webhooks de YCloud sean rechazados
                              si la firma no coincide. Se dejó vacío intencionalmente
                              en la configuración actual de Railway (marzo 2026).
+ENCRYPTION_KEY             - Clave AES-256-GCM para encriptar/desencriptar API keys
+                             guardadas en la BD. Debe ser exactamente 64 caracteres
+                             hex (32 bytes). Generar con:
+                             node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+                             Si no se configura, el sistema funciona en modo degradado
+                             (las keys se usan en texto plano) con un WARNING en logs.
 PORT                       - Puerto (Railway lo asigna automáticamente)
 ```
 
@@ -223,6 +229,16 @@ Railway se usa para el backend que maneja webhooks de YCloud y procesa mensajes 
 ### Notas de Configuración (Registro de Decisiones)
 - **YCLOUD_WEBHOOK_SECRET vacío en Railway**: Se dejó intencionalmente en blanco. La lógica del servidor (`server/src/webhook.ts`) solo valida la firma si `YCLOUD_WEBHOOK_SECRET` tiene un valor. Al dejarlo vacío, todos los webhooks entrantes de YCloud son aceptados sin validación de firma, lo cual funciona correctamente en el entorno actual.
 - **Conexión Railway ↔ YCloud ↔ Plataforma**: Validada y funcionando (marzo 2026). La configuración guardada en Supabase responde correctamente.
+
+## Cambios Recientes (abril 2026)
+
+### Encriptación AES-256-GCM para API keys (abril 2026)
+- **`server/src/crypto.ts`** (nuevo): Módulo de encriptación con `encrypt()` y `decrypt()` usando AES-256-GCM nativo de Node.js. Formato del valor encriptado: `iv:authTag:ciphertext` (todo hex). `decrypt()` es idempotente para valores en texto plano (backwards-compatible).
+- **`server/src/ai.ts`**: `callOpenAI`, `callAnthropic`, `callGoogle` (y sus variantes `continue*`) llaman a `decrypt(apiKey)` antes de crear el cliente o construir la URL.
+- **`server/src/webhook.ts`**: En `processInboundMessage`, se crea `decryptedAgent` con la api_key desencriptada antes de pasarlo a `getAIResponse`. En `executeGenerarLinkPago`, se desencripta `settings.api_key_encrypted` antes de usarlo en las cabeceras de fetch.
+- **`server/src/payments.ts`**: En `handleCreatePaymentLink`, se crea `decryptedSettings` con `api_key_encrypted` y `webhook_secret` desencriptados antes de pasarlos a `createMercadoPagoLink` / `createStripeLink`.
+- **`server/src/migrate-encrypt-keys.ts`** (nuevo): Script ejecutable con `npm run migrate:encrypt` que encripta en la BD todas las keys que aún estén en texto plano (idempotente).
+- **Variable `ENCRYPTION_KEY`**: Debe configurarse en Railway (64 chars hex). Sin ella el sistema funciona en modo degradado con WARNING.
 
 ## Cambios Recientes (marzo 2026)
 

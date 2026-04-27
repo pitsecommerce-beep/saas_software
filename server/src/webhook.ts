@@ -3,6 +3,7 @@ import { supabase, isConfigured } from './supabase';
 import { getAIResponse, continueWithToolResults, buildSystemPrompt } from './ai';
 import type { AIResponse, AIResponsePart } from './ai';
 import { transcribeAudio } from './transcription';
+import { decrypt } from './crypto';
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -144,6 +145,9 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
     console.warn(`Agent ${assignment.agent_id} is inactive or not found`);
     return;
   }
+
+  // Decrypt API key before any AI call
+  const decryptedAgent: AIAgent = { ...agent, api_key_encrypted: decrypt(agent.api_key_encrypted) };
 
   const teamId = assignment.team_id;
 
@@ -287,7 +291,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   });
 
   // Get AI response (may include tool calls)
-  const aiResponse = await getAIResponse(agent, sanitizedMessages, contextForAI, currentDateTime);
+  const aiResponse = await getAIResponse(decryptedAgent, sanitizedMessages, contextForAI, currentDateTime);
 
   if (!aiResponse) {
     console.warn('AI returned empty response');
@@ -297,7 +301,7 @@ async function processInboundMessage(msg: YCloudMessage): Promise<void> {
   // Process the response — handle tool call loop
   const aiResult = await processAIResponse(
     aiResponse,
-    agent,
+    decryptedAgent,
     contextForAI,
     sanitizedMessages,
     teamId,
@@ -1081,6 +1085,7 @@ async function executeGenerarLinkPago(
     const successUrl = (settings.success_url && String(settings.success_url).trim()) || 'https://orkesta.app/payment/success';
     const cancelUrl = (settings.cancel_url && String(settings.cancel_url).trim()) || 'https://orkesta.app/payment/cancel';
     const idempotencyKey = `${externalReference}-${Date.now()}`;
+    const decryptedPaymentApiKey = decrypt(settings.api_key_encrypted);
     const metadata: Record<string, string> = {
       team_id: teamId,
       conversation_id: conversationId,
@@ -1108,7 +1113,7 @@ async function executeGenerarLinkPago(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${settings.api_key_encrypted}`,
+          Authorization: `Bearer ${decryptedPaymentApiKey}`,
           'X-Idempotency-Key': idempotencyKey,
         },
         body: JSON.stringify(body),
@@ -1138,7 +1143,7 @@ async function executeGenerarLinkPago(
       const response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${settings.api_key_encrypted}`,
+          Authorization: `Bearer ${decryptedPaymentApiKey}`,
           'Content-Type': 'application/x-www-form-urlencoded',
           'Idempotency-Key': idempotencyKey,
         },

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { supabase, isConfigured } from './supabase';
 import { extractMessageBlocks } from './webhook';
+import { decrypt } from './crypto';
 
 // -----------------------------------------------------------------------------
 // Payment link handler
@@ -300,6 +301,12 @@ export async function handleCreatePaymentLink(req: Request, res: Response): Prom
       return;
     }
 
+    const decryptedSettings: PaymentSettingsRow = {
+      ...settings,
+      api_key_encrypted: decrypt(settings.api_key_encrypted),
+      webhook_secret: settings.webhook_secret ? decrypt(settings.webhook_secret) : settings.webhook_secret,
+    };
+
     const currency = (settings.currency ?? 'MXN').toUpperCase();
     const externalReference = order_id ?? conversation_id;
     const metadata: Record<string, string> = {
@@ -318,7 +325,7 @@ export async function handleCreatePaymentLink(req: Request, res: Response): Prom
     try {
       if (settings.provider === 'mercadopago') {
         const result = await createMercadoPagoLink({
-          settings,
+          settings: decryptedSettings,
           amount: parsedAmount,
           description,
           currency,
@@ -339,7 +346,7 @@ export async function handleCreatePaymentLink(req: Request, res: Response): Prom
         providerPaymentId = result.id;
       } else if (settings.provider === 'stripe') {
         const result = await createStripeLink({
-          settings,
+          settings: decryptedSettings,
           amount: parsedAmount,
           description,
           currency,
